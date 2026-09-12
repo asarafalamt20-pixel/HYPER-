@@ -49,6 +49,10 @@ app.post('/api/auth/login',async(req,res)=>{
   let x={id:u.id,username:u.username,email:u.email,display_name:u.display_name,avatar_url:u.avatar_url};res.json({user:x,token:tok(x)});
  }catch(e){res.status(500).json({message:e.message})}
 });
+app.get('/api/channels/:username',async(req,res)=>{
+ if(!pool){let v=demo.find(x=>(x.username||'').toLowerCase()===req.params.username.toLowerCase());return v?res.json({username:v.username,display_name:v.channel,avatar_url:v.avatar_url||null}):res.status(404).json({message:'Channel not found'})}
+ try{let q=await pool.query('SELECT id,username,email,display_name,avatar_url FROM users WHERE LOWER(username)=LOWER($1)',[req.params.username]);if(!q.rows[0])return res.status(404).json({message:'Channel not found'});res.json(q.rows[0])}catch(e){res.status(500).json({message:e.message})}
+});
 app.get('/api/videos',async(req,res)=>{
  if(!pool)return res.json(req.query.type?demo.filter(x=>x.type===req.query.type):demo);
  try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM videos v JOIN users u ON u.id=v.user_id ${req.query.type?'WHERE v.type=$1':''} ORDER BY v.created_at DESC`,req.query.type?[req.query.type]:[]);res.json(q.rows)}
