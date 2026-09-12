@@ -3,7 +3,7 @@ const {Pool}=require('pg');
 const app=express(),PORT=process.env.PORT||10000,SECRET=process.env.JWT_SECRET||'dev-secret';
 app.use(cors());app.use(express.json());
 const dir=path.join(__dirname,'uploads');fs.mkdirSync(dir,{recursive:true});
-const upload=multer({fileFilter:(req,file,cb)=>{if(file.fieldname==='video'&&!file.mimetype.startsWith('video/'))return cb(new Error('Video file required'));if((file.fieldname==='thumbnail'||file.fieldname==='avatar'||file.fieldname==='banner')&&!file.mimetype.startsWith('image/'))return cb(new Error('Image file required'));cb(null,true)},storage:multer.diskStorage({destination:dir,filename:(r,f,cb)=>cb(null,Date.now()+'-'+f.originalname.replace(/[^a-zA-Z0-9._-]/g,'_'))}),limits:{fileSize:250*1024*1024}});
+const upload=multer({storage:multer.diskStorage({destination:dir,filename:(r,f,cb)=>cb(null,Date.now()+'-'+f.originalname.replace(/[^a-zA-Z0-9._-]/g,'_'))}),limits:{fileSize:250*1024*1024}});
 app.use('/uploads',express.static(dir));
 const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.NODE_ENV==='production'?{rejectUnauthorized:false}:false}):null;
 const demo=[
@@ -13,9 +13,9 @@ const demo=[
 
 async function db(){
  if(!pool)return;
- await pool.query(`CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY,username VARCHAR(50) UNIQUE NOT NULL,email VARCHAR(160) UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name VARCHAR(100) NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''; ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_url TEXT;
- CREATE TABLE IF NOT EXISTS videos(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,title VARCHAR(200) NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT,type VARCHAR(20) DEFAULT 'video',views INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW());
- CREATE TABLE IF NOT EXISTS subscriptions(subscriber_id INTEGER REFERENCES users(id) ON DELETE CASCADE,channel_id INTEGER REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(subscriber_id,channel_id));
+ await pool.query(`CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY,username VARCHAR(50) UNIQUE NOT NULL,email VARCHAR(160) UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name VARCHAR(100) NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW(),avatar_url TEXT DEFAULT NULL);
+ CREATE TABLE IF NOT EXISTS videos(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,title VARCHAR(200) NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT,type VARCHAR(20) DEFAULT 'video',category VARCHAR(30) DEFAULT 'Vlog',views INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW());
+ ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT; ALTER TABLE videos ADD COLUMN IF NOT EXISTS category VARCHAR(30) DEFAULT 'Vlog'; CREATE TABLE IF NOT EXISTS subscriptions(subscriber_id INTEGER REFERENCES users(id) ON DELETE CASCADE,channel_id INTEGER REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(subscriber_id,channel_id));
  CREATE TABLE IF NOT EXISTS comments(id SERIAL PRIMARY KEY,video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,text TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
  CREATE TABLE IF NOT EXISTS watch_history(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,watched_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
  CREATE TABLE IF NOT EXISTS liked_videos(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,liked_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
@@ -23,12 +23,10 @@ async function db(){
 }
 const tok=u=>jwt.sign({id:u.id,username:u.username},SECRET,{expiresIn:'30d'});
 function auth(req,res,next){const h=req.headers.authorization||'';try{req.user=jwt.verify(h.startsWith('Bearer ')?h.slice(7):'',SECRET);next()}catch{return res.status(401).json({message:'Login required'})}}
+
+app.get('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let q=await pool.query('SELECT id,username,email,display_name,avatar_url FROM users WHERE id=$1',[req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
+app.put('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let a=String(req.body.avatar_url||'');if(a.length>1100000)return res.status(400).json({message:'Profile picture is too large'});let q=await pool.query('UPDATE users SET avatar_url=$1 WHERE id=$2 RETURNING id,username,email,display_name,avatar_url',[a||null,req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
 app.get('/api/health',(r,s)=>s.json({ok:true,app:'HYPER'}));
-app.get('/api/status',async(r,s)=>{if(!pool)return s.status(503).json({ok:false,database:false,message:'Database is not connected on Render'});try{await pool.query('SELECT 1');s.json({ok:true,database:true})}catch(e){s.status(503).json({ok:false,database:false,message:e.message})}});
-
-app.get('/api/me/profile',auth,async(req,res)=>{try{let q=await pool.query('SELECT id,username,email,display_name,bio,avatar_url,banner_url FROM users WHERE id=$1',[req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Profile not found'});res.json(q.rows[0])}catch(e){res.status(500).json({message:e.message})}});
-app.post('/api/me/profile',auth,upload.fields([{name:'avatar',maxCount:1},{name:'banner',maxCount:1}]),async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let u=await pool.query('SELECT * FROM users WHERE id=$1',[req.user.id]);if(!u.rows[0])return res.status(404).json({message:'Profile not found'});let username=(req.body.username||u.rows[0].username).trim().toLowerCase(),displayName=(req.body.displayName||u.rows[0].display_name).trim(),bio=(req.body.bio||'').trim();if(!/^[a-zA-Z0-9_]{3,50}$/.test(username))return res.status(400).json({message:'Username: 3-50 letters, numbers or _ only'});let avatar=u.rows[0].avatar_url,banner=u.rows[0].banner_url;if(req.files?.avatar?.[0])avatar='/uploads/'+req.files.avatar[0].filename;if(req.files?.banner?.[0])banner='/uploads/'+req.files.banner[0].filename;let q=await pool.query('UPDATE users SET username=$1,display_name=$2,bio=$3,avatar_url=$4,banner_url=$5 WHERE id=$6 RETURNING id,username,email,display_name,bio,avatar_url,banner_url',[username,displayName,bio,avatar,banner,req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(400).json({message:e.code==='23505'?'Username already exists':e.message})}});
-
 
 app.post('/api/auth/register',async(req,res)=>{
  try{
@@ -39,7 +37,7 @@ app.post('/api/auth/register',async(req,res)=>{
   if(password.length<6)return res.status(400).json({message:'Password must be at least 6 characters'});
   if(!/^[a-zA-Z0-9_]{3,50}$/.test(username))return res.status(400).json({message:'Username: 3-50 letters, numbers or _ only'});
   let h=await bcrypt.hash(password,10);
-  let q=await pool.query('INSERT INTO users(username,email,password_hash,display_name) VALUES($1,$2,$3,$4) RETURNING id,username,email,display_name',[username.toLowerCase(),email,h,displayName]);
+  let q=await pool.query('INSERT INTO users(username,email,password_hash,display_name) VALUES($1,$2,$3,$4) RETURNING id,username,email,display_name,avatar_url',[username.toLowerCase(),email,h,displayName]);
   let u=q.rows[0]; res.json({user:u,token:tok(u)});
  }catch(e){res.status(400).json({message:e.code==='23505'?'Username or email already exists':e.message})}
 });
@@ -48,24 +46,24 @@ app.post('/api/auth/login',async(req,res)=>{
   if(!pool)return res.status(503).json({message:'Database is not connected on the server'});
   let email=(req.body.email||'').trim().toLowerCase(), q=await pool.query('SELECT * FROM users WHERE email=$1',[email]),u=q.rows[0];
   if(!u||!(await bcrypt.compare(req.body.password||'',u.password_hash)))return res.status(401).json({message:'Invalid email or password'});
-  let x={id:u.id,username:u.username,email:u.email,display_name:u.display_name};res.json({user:x,token:tok(x)});
+  let x={id:u.id,username:u.username,email:u.email,display_name:u.display_name,avatar_url:u.avatar_url};res.json({user:x,token:tok(x)});
  }catch(e){res.status(500).json({message:e.message})}
 });
 app.get('/api/videos',async(req,res)=>{
  if(!pool)return res.json(req.query.type?demo.filter(x=>x.type===req.query.type):demo);
- try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel FROM videos v JOIN users u ON u.id=v.user_id ${req.query.type?'WHERE v.type=$1':''} ORDER BY v.created_at DESC`,req.query.type?[req.query.type]:[]);res.json(q.rows)}
+ try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM videos v JOIN users u ON u.id=v.user_id ${req.query.type?'WHERE v.type=$1':''} ORDER BY v.created_at DESC`,req.query.type?[req.query.type]:[]);res.json(q.rows)}
  catch(e){res.status(500).json({message:e.message})}
 });
 app.get('/api/videos/:id',async(req,res)=>{
  if(!pool){let v=demo.find(x=>String(x.id)===req.params.id);return v?res.json(v):res.status(404).json({message:'Not found'})}
- try{let q=await pool.query('SELECT v.*,u.username,u.display_name channel FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});await pool.query('UPDATE videos SET views=views+1 WHERE id=$1',[req.params.id]);res.json(q.rows[0])}
+ try{let q=await pool.query('SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});await pool.query('UPDATE videos SET views=views+1 WHERE id=$1',[req.params.id]);res.json(q.rows[0])}
  catch(e){res.status(500).json({message:e.message})}
 });
 app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thumbnail',maxCount:1}]),async(req,res)=>{
  if(!pool)return res.status(503).json({message:'Database is not connected on the server'});
  if(!req.files?.video?.[0])return res.status(400).json({message:'Video required'});
  try{let v='/uploads/'+req.files.video[0].filename,t=req.files.thumbnail?.[0]?'/uploads/'+req.files.thumbnail[0].filename:null;
- let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[req.user.id,req.body.title||'Untitled',req.body.description||'',v,t,req.body.type==='short'?'short':'video']);res.json(q.rows[0])}
+ let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[req.user.id,req.body.title||'Untitled',req.body.description||'',v,t,req.body.type==='short'?'short':'video',req.body.category||'Vlog']);res.json(q.rows[0])}
  catch(e){res.status(500).json({message:e.message})}
 });
 app.post('/api/videos/:id/like',auth,async(req,res)=>{
@@ -81,12 +79,13 @@ app.post('/api/videos/:id/subscribe',auth,async(req,res)=>{
  try{let q=await pool.query('SELECT user_id FROM videos WHERE id=$1',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});let c=q.rows[0].user_id;if(c===req.user.id)return res.status(400).json({message:'Cannot subscribe to yourself'});let x=await pool.query('SELECT 1 FROM subscriptions WHERE subscriber_id=$1 AND channel_id=$2',[req.user.id,c]);if(x.rowCount){await pool.query('DELETE FROM subscriptions WHERE subscriber_id=$1 AND channel_id=$2',[req.user.id,c]);return res.json({subscribed:false})}await pool.query('INSERT INTO subscriptions(subscriber_id,channel_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.user.id,c]);res.json({subscribed:true})}catch(e){res.status(500).json({message:e.message})}
 });
 app.post('/api/videos/:id/history',auth,async(req,res)=>{if(!pool)return res.json({ok:true});try{await pool.query('INSERT INTO watch_history(user_id,video_id,watched_at) VALUES($1,$2,NOW()) ON CONFLICT(user_id,video_id) DO UPDATE SET watched_at=NOW()',[req.user.id,req.params.id]);res.json({ok:true})}catch(e){res.status(500).json({message:e.message})}});
-app.get('/api/me/history',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel FROM watch_history h JOIN videos v ON v.id=h.video_id LEFT JOIN users u ON u.id=v.user_id WHERE h.user_id=$1 ORDER BY h.watched_at DESC LIMIT 100`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
-app.get('/api/me/liked',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel FROM liked_videos l JOIN videos v ON v.id=l.video_id LEFT JOIN users u ON u.id=v.user_id WHERE l.user_id=$1 ORDER BY l.liked_at DESC LIMIT 100`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
-app.get('/api/me/videos',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query('SELECT v.*,u.username,u.display_name channel FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC',[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
+app.get('/api/me/history',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM watch_history h JOIN videos v ON v.id=h.video_id LEFT JOIN users u ON u.id=v.user_id WHERE h.user_id=$1 ORDER BY h.watched_at DESC LIMIT 100`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
+app.get('/api/me/liked',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM liked_videos l JOIN videos v ON v.id=l.video_id LEFT JOIN users u ON u.id=v.user_id WHERE l.user_id=$1 ORDER BY l.liked_at DESC LIMIT 100`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
+app.get('/api/me/videos',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query('SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC',[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
 app.post('/api/videos/:id/save',auth,async(req,res)=>{if(!pool)return res.json({saved:true});try{let x=await pool.query('SELECT 1 FROM saved_videos WHERE user_id=$1 AND video_id=$2',[req.user.id,req.params.id]);if(x.rowCount){await pool.query('DELETE FROM saved_videos WHERE user_id=$1 AND video_id=$2',[req.user.id,req.params.id]);return res.json({saved:false})}await pool.query('INSERT INTO saved_videos(user_id,video_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.user.id,req.params.id]);res.json({saved:true})}catch(e){res.status(500).json({message:e.message})}});
-app.get('/api/me/saved',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel FROM saved_videos s JOIN videos v ON v.id=s.video_id LEFT JOIN users u ON u.id=v.user_id WHERE s.user_id=$1 ORDER BY s.saved_at DESC LIMIT 100`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
-app.post('/api/videos/:id/comments',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let q=await pool.query('INSERT INTO comments(video_id,user_id,text) VALUES($1,$2,$3) RETURNING id,text,created_at',[req.params.id,req.user.id,req.body.text||'']);res.json(q.rows[0])}catch(e){res.status(500).json({message:e.message})}});
-app.use((err,req,res,next)=>{if(err instanceof multer.MulterError){if(err.code==='LIMIT_FILE_SIZE')return res.status(413).json({message:'File 250 MB se kam rakhein'});return res.status(400).json({message:err.message})}if(err)return res.status(400).json({message:err.message||'Upload failed'});next()});
+app.get('/api/me/saved',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url FROM saved_videos s JOIN videos v ON v.id=s.video_id LEFT JOIN users u ON u.id=v.user_id WHERE s.user_id=$1 ORDER BY s.saved_at DESC LIMIT 100`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
+
+app.get('/api/videos/:id/comments',async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query('SELECT c.id,c.text,c.created_at,u.display_name FROM comments c JOIN users u ON u.id=c.user_id WHERE c.video_id=$1 ORDER BY c.created_at DESC LIMIT 100',[req.params.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
+app.post('/api/videos/:id/comments',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let q=await pool.query('INSERT INTO comments(video_id,user_id,text) VALUES($1,$2,$3) RETURNING id,text,created_at',[req.params.id,req.user.id,String(req.body.text||'').trim()]);res.json(q.rows[0])}catch(e){res.status(500).json({message:e.message})}});
 app.get('*',(req,res)=>{if(req.path.startsWith('/api/'))return res.status(404).end();res.sendFile(path.join(__dirname,'index.html'))});
 db().then(()=>app.listen(PORT,'0.0.0.0',()=>console.log('HYPER on '+PORT))).catch(e=>{console.error(e);app.listen(PORT,'0.0.0.0',()=>console.log('HYPER on '+PORT+' without DB'))});

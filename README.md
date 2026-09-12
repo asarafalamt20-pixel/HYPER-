@@ -1,20 +1,33 @@
-# HYPER — YouTube-style video app
+# HYPER – YouTube-style video app
 
-This is a ready starter for a YouTube-like video sharing app using Node.js + Express + PostgreSQL. It includes Home, Shorts, Search, Watch, Subscribe, Like, Comments API, Login/Register API and video upload API.
+HYPER is an Express + PostgreSQL video platform starter.
 
-## GitHub
-Create a new repository, upload every file in this folder, and push.
+## Included systems
+- Online sign in and account creation
+- Home + For You
+- Trending, Music, Gaming and Vlog category filters
+- Shorts
+- Search
+- Video watch page
+- Like, Save/Watch Later, Subscribe and Share
+- Comments
+- Watch History
+- Liked Videos
+- Downloaded Videos list
+- Your Videos
+- Video + thumbnail upload
+- Video category selection on upload
+- Profile picture
+- Notifications setting
+- Dark/Light mode
+- Autoplay
+- Data Saver
+- Download settings and Wi-Fi-only option
+- Privacy toggle
+- Logout
 
-## Render
-Use the included `render.yaml` Blueprint, or create a Web Service manually:
-- Build: `npm install`
-- Start: `npm start`
-- Environment: `DATABASE_URL`, `JWT_SECRET`
+## Run
+npm install
+npm start
 
-The app listens on `0.0.0.0` and Render supplies the PORT. Render can auto-deploy after Git pushes.
-
-## WebIntoApp
-After Render gives the app an `onrender.com` URL, put that URL into WebIntoApp to wrap the website as an Android app. You can also use WebIntoApp's HTML-to-App flow for the `public` website files.
-
-## Production warning
-This starter stores uploaded videos on the web service filesystem. For a real public video platform, move video files to Cloudinary, Amazon S3, Cloudflare R2 or similar object storage/CDN; keep PostgreSQL for app data. Render web-service filesystem is not a YouTube-scale media store.
+Set DATABASE_URL and JWT_SECRET in production. Render Blueprint can provision PostgreSQL automatically.
