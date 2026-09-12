@@ -56,6 +56,27 @@ app.get('/api/channels/:username',async(req,res)=>{
 app.get('/api/me/subscriptions',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT u.id,u.username,u.email,u.display_name,COALESCE(u.full_name,u.display_name) full_name,COALESCE(u.channel_name,u.display_name) channel_name,COALESCE(u.channel_description,'') channel_description,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s2 WHERE s2.channel_id=u.id) subscriber_count FROM subscriptions s JOIN users u ON u.id=s.channel_id WHERE s.subscriber_id=$1 ORDER BY u.channel_name`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
 app.get('/api/me/subscription-videos',auth,async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s2 WHERE s2.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id JOIN subscriptions s ON s.channel_id=u.id WHERE s.subscriber_id=$1 ORDER BY v.created_at DESC`,[req.user.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
 app.get('/api/channels/:username/subscribed',auth,async(req,res)=>{if(!pool)return res.json({subscribed:false});try{let q=await pool.query('SELECT u.id,(SELECT COUNT(*) FROM subscriptions s2 WHERE s2.channel_id=u.id) subscriber_count,EXISTS(SELECT 1 FROM subscriptions s WHERE s.subscriber_id=$2 AND s.channel_id=u.id) subscribed FROM users u WHERE LOWER(u.username)=LOWER($1)',[req.params.username,req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Channel not found'});res.json(q.rows[0])}catch(e){res.status(500).json({message:e.message})}});
+app.get('/api/search',async(req,res)=>{
+ const q=String(req.query.q||'').trim();
+ if(!q)return res.json({channels:[],videos:[]});
+ if(!pool){
+  const x=q.toLowerCase();
+  const channels=demo.filter(v=>(v.channel||'').toLowerCase().includes(x)).map(v=>({username:v.username,display_name:v.channel,channel_name:v.channel,avatar_url:v.avatar_url||null,subscriber_count:0}));
+  const seen=new Set(); const cs=channels.filter(c=>{if(seen.has(c.username))return false;seen.add(c.username);return true});
+  return res.json({channels:cs,videos:demo.filter(v=>((v.title||'')+' '+(v.channel||'')+' '+(v.category||'')).toLowerCase().includes(x))});
+ }
+ try{
+  const like='%'+q.replace(/[%_]/g,'\$&')+'%';
+  const cr=await pool.query(`SELECT u.username,u.display_name,u.channel_name,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count
+    FROM users u WHERE u.username ILIKE $1 ESCAPE '\\' OR u.display_name ILIKE $1 ESCAPE '\\' OR u.channel_name ILIKE $1 ESCAPE '\\'
+    ORDER BY u.channel_name ASC LIMIT 20`,[like]);
+  const vr=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.channel_name,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count
+    FROM videos v JOIN users u ON u.id=v.user_id
+    WHERE v.title ILIKE $1 ESCAPE '\\' OR v.description ILIKE $1 ESCAPE '\\' OR u.username ILIKE $1 ESCAPE '\\' OR u.display_name ILIKE $1 ESCAPE '\\' OR u.channel_name ILIKE $1 ESCAPE '\\'
+    ORDER BY v.created_at DESC LIMIT 100`,[like]);
+  res.json({channels:cr.rows,videos:vr.rows});
+ }catch(e){res.status(500).json({message:e.message})}
+});
 app.get('/api/videos',async(req,res)=>{
  if(!pool)return res.json(req.query.type?demo.filter(x=>x.type===req.query.type):demo);
  try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id ${req.query.type?'WHERE v.type=$1':''} ORDER BY v.created_at DESC`,req.query.type?[req.query.type]:[]);res.json(q.rows)}
