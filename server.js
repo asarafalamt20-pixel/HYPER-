@@ -113,6 +113,10 @@ app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thum
  let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[req.user.id,String(req.body.title||'Untitled').slice(0,200),req.body.description||'',v,t,req.body.type==='short'?'short':'video',cat,uploadKey]);res.status(201).json(q.rows[0])}
  catch(e){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}console.error('Publish error:',e);res.status(500).json({message:'Publish failed. Please try again.'})}
 });
+app.post('/api/videos/:id/view',async(req,res)=>{
+ if(!pool){let v=demo.find(x=>String(x.id)===String(req.params.id));return v?res.json({views:(v.views||0)+1}):res.status(404).json({message:'Not found'})}
+ try{let q=await pool.query('UPDATE videos SET views=views+1 WHERE id=$1 RETURNING views',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});res.json({views:q.rows[0].views})}catch(e){res.status(500).json({message:e.message})}
+});
 app.post('/api/videos/:id/like',auth,async(req,res)=>{
  if(!pool)return res.json({likes:0,liked:true});
  try{
