@@ -2,6 +2,8 @@ const express=require('express'),cors=require('cors'),bcrypt=require('bcryptjs')
 const {Pool}=require('pg');
 const app=express(),PORT=process.env.PORT||10000,SECRET=process.env.JWT_SECRET||'dev-secret';
 app.use(cors());app.use(express.json());
+// Always fetch fresh feed/API data so newly published videos appear for every user/device.
+app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');next()});
 const dir=path.join(__dirname,'uploads');fs.mkdirSync(dir,{recursive:true});
 const upload=multer({storage:multer.diskStorage({destination:dir,filename:(r,f,cb)=>cb(null,Date.now()+'-'+f.originalname.replace(/[^a-zA-Z0-9._-]/g,'_'))}),limits:{fileSize:250*1024*1024}});
 app.use('/uploads',express.static(dir));
@@ -78,9 +80,21 @@ app.get('/api/search',async(req,res)=>{
  }catch(e){res.status(500).json({message:e.message})}
 });
 app.get('/api/videos',async(req,res)=>{
- if(!pool)return res.json(req.query.type?demo.filter(x=>x.type===req.query.type):demo);
- try{let q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id ${req.query.type?'WHERE v.type=$1':''} ORDER BY v.created_at DESC`,req.query.type?[req.query.type]:[]);res.json(q.rows)}
- catch(e){res.status(500).json({message:e.message})}
+ const type=req.query.type==='short'?'short':req.query.type==='video'?'video':null;
+ const category=String(req.query.category||'').trim();
+ if(!pool){
+  let list=demo.slice();
+  if(type)list=list.filter(x=>x.type===type);
+  if(category&&category!=='All')list=list.filter(x=>(x.category||'Discover').toLowerCase()===category.toLowerCase());
+  return res.json(list);
+ }
+ try{
+  const params=[]; const where=[];
+  if(type){params.push(type);where.push(`v.type=$${params.length}`)}
+  if(category&&category!=='All'){params.push(category);where.push(`LOWER(v.category)=LOWER($${params.length})`)}
+  const q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.channel_name,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id ${where.length?'WHERE '+where.join(' AND '):''} ORDER BY v.created_at DESC`,params);
+  res.json(q.rows);
+ }catch(e){res.status(500).json({message:e.message})}
 });
 app.get('/api/videos/:id',async(req,res)=>{
  if(!pool){let v=demo.find(x=>String(x.id)===req.params.id);return v?res.json(v):res.status(404).json({message:'Not found'})}
