@@ -25,7 +25,7 @@ const tok=u=>jwt.sign({id:u.id,username:u.username},SECRET,{expiresIn:'30d'});
 function auth(req,res,next){const h=req.headers.authorization||'';try{req.user=jwt.verify(h.startsWith('Bearer ')?h.slice(7):'',SECRET);next()}catch{return res.status(401).json({message:'Login required'})}}
 
 app.get('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let q=await pool.query('SELECT id,username,email,display_name,avatar_url FROM users WHERE id=$1',[req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
-app.put('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let a=String(req.body.avatar_url||'');if(a.length>1100000)return res.status(400).json({message:'Profile picture is too large'});let q=await pool.query('UPDATE users SET avatar_url=$1 WHERE id=$2 RETURNING id,username,email,display_name,avatar_url',[a||null,req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
+app.put('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let a=String(req.body.avatar_url||'');let n=String(req.body.display_name||'').trim();if(a&&a.length>1100000)return res.status(400).json({message:'Profile picture is too large'});if(n&&(n.length<2||n.length>100))return res.status(400).json({message:'Channel name must be 2-100 characters'});let q=await pool.query('UPDATE users SET avatar_url=COALESCE($1,avatar_url),display_name=COALESCE(NULLIF($2,$4),display_name) WHERE id=$3 RETURNING id,username,email,display_name,avatar_url',[a||null,n,req.user.id,'']);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
 app.get('/api/health',(r,s)=>s.json({ok:true,app:'HYPER'}));
 
 app.post('/api/auth/register',async(req,res)=>{
@@ -60,11 +60,14 @@ app.get('/api/videos/:id',async(req,res)=>{
  catch(e){res.status(500).json({message:e.message})}
 });
 app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thumbnail',maxCount:1}]),async(req,res)=>{
- if(!pool)return res.status(503).json({message:'Database is not connected on the server'});
- if(!req.files?.video?.[0])return res.status(400).json({message:'Video required'});
- try{let v='/uploads/'+req.files.video[0].filename,t=req.files.thumbnail?.[0]?'/uploads/'+req.files.thumbnail[0].filename:null;
- let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[req.user.id,req.body.title||'Untitled',req.body.description||'',v,t,req.body.type==='short'?'short':'video',req.body.category||'Vlog']);res.json(q.rows[0])}
- catch(e){res.status(500).json({message:e.message})}
+ if(!pool)return res.status(503).json({message:'Database is not connected. Add DATABASE_URL and restart the server.'});
+ const vf=req.files?.video?.[0];
+ if(!vf)return res.status(400).json({message:'Video required'});
+ const allowed=['Discover','Popular','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'];
+ const cat=allowed.includes(req.body.category)?req.body.category:'Discover';
+ try{let v='/uploads/'+vf.filename,t=req.files.thumbnail?.[0]?'/uploads/'+req.files.thumbnail[0].filename:null;
+ let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[req.user.id,String(req.body.title||'Untitled').slice(0,200),req.body.description||'',v,t,req.body.type==='short'?'short':'video',cat]);res.status(201).json(q.rows[0])}
+ catch(e){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}console.error('Publish error:',e);res.status(500).json({message:'Publish failed. Please try again.'})}
 });
 app.post('/api/videos/:id/like',auth,async(req,res)=>{
  if(!pool)return res.json({likes:0,liked:true});
@@ -87,5 +90,6 @@ app.get('/api/me/saved',auth,async(req,res)=>{if(!pool)return res.json([]);try{l
 
 app.get('/api/videos/:id/comments',async(req,res)=>{if(!pool)return res.json([]);try{let q=await pool.query('SELECT c.id,c.text,c.created_at,u.display_name FROM comments c JOIN users u ON u.id=c.user_id WHERE c.video_id=$1 ORDER BY c.created_at DESC LIMIT 100',[req.params.id]);res.json(q.rows)}catch(e){res.status(500).json({message:e.message})}});
 app.post('/api/videos/:id/comments',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let q=await pool.query('INSERT INTO comments(video_id,user_id,text) VALUES($1,$2,$3) RETURNING id,text,created_at',[req.params.id,req.user.id,String(req.body.text||'').trim()]);res.json(q.rows[0])}catch(e){res.status(500).json({message:e.message})}});
+app.use((err,req,res,next)=>{if(err instanceof multer.MulterError){return res.status(400).json({message:err.code==='LIMIT_FILE_SIZE'?'Video is too large (max 250 MB).':err.message})}if(err)return res.status(400).json({message:err.message||'Upload failed'});next()});
 app.get('*',(req,res)=>{if(req.path.startsWith('/api/'))return res.status(404).end();res.sendFile(path.join(__dirname,'index.html'))});
 db().then(()=>app.listen(PORT,'0.0.0.0',()=>console.log('HYPER on '+PORT))).catch(e=>{console.error(e);app.listen(PORT,'0.0.0.0',()=>console.log('HYPER on '+PORT+' without DB'))});
