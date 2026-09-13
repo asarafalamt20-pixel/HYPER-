@@ -47,7 +47,7 @@ async function notifyUser(userId,type,title,message,relatedUserId=null,relatedVi
 async function notifyAdmins(type,title,message,relatedUserId=null,relatedVideoId=null){if(!pool)return;try{const q=await pool.query('SELECT id FROM users WHERE is_admin=TRUE OR LOWER(email)=LOWER($1)',[ADMIN_EMAIL]);for(const r of q.rows)await notifyUser(r.id,type,title,message,relatedUserId,relatedVideoId)}catch(e){console.warn('Admin notification failed:',e.message)}}
 
 const CREATOR_SHARE_BPS=7000; // Fixed HYPER revenue split: Creator 70% / HYPER Admin 30%
-const MIN_WITHDRAWAL_PAISE=Math.max(50000,Number(process.env.HYPER_MIN_WITHDRAWAL_PAISE||50000));
+const MIN_WITHDRAWAL_PAISE=50000;
 const MONETIZATION_LIVE=String(process.env.HYPER_MONETIZATION_ENABLED||'false').toLowerCase()==='true';
 const RZP_KEY=process.env.RAZORPAYX_KEY_ID||'';
 const RZP_SECRET=process.env.RAZORPAYX_KEY_SECRET||'';
