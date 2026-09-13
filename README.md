@@ -1,9 +1,10 @@
-# HYPER v1.3.9
+# HYPER v1.4.3
 
 Fixes:
-- Creator can delete own videos from Watch and Library even when API returns numeric/string user IDs.
-- Popular tab automatically includes videos that become popular, regardless of their original category.
-- Popular ranking uses views + likes with recent uploads as a tie-breaker.
-- Discover remains category-based and is ranked by engagement/recency on the client.
-- Reduced spacing around Watch page sections and Related Videos.
-- Permanent-storage architecture from v1.3.8 is retained.
+- Uploaded videos are no longer intentionally removed when the app is updated.
+- If a Render persistent disk is mounted at `/var/data`, HYPER automatically stores uploads in `/var/data/hyper-uploads`.
+- `HYPER_UPLOAD_DIR` can override the upload directory.
+- Object-storage support from previous versions remains available.
+- Refresh route behavior from v1.4.1/v1.4.2 remains: the current tab/section/watch/channel route is restored on refresh.
+
+Important: Render's normal local filesystem is ephemeral. To keep videos across deployments/restarts, mount a persistent disk or configure S3-compatible object storage.
