@@ -84,3 +84,11 @@ The HYPER Admin option is shown inside Account & Channel only for the configured
 - New ticket/user reply creates an Admin notification; Admin reply/status change creates a user notification with the existing red notification dot.
 - Support messages are stored in PostgreSQL tables `support_tickets` and `support_messages`.
 - This version uses text messages only; attachments can be added later with the upload/storage system.
+
+
+## v2.0.1 transfer/language fixes
+- Upload progress now shows live percentage during each chunk.
+- Paused uploads get a Resume Upload button and retry automatically on page visibility/refresh.
+- Download progress shows percentage when the video server allows browser progress (XHR/CORS).
+- Settings now includes Language selection.
+- Upload form includes Video Language and watch page includes Video Language selector.
