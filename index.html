@@ -342,7 +342,7 @@ async function uploadQueuedTask(q){
     let attempt=0;
     while(true){
      try{
-      const fd=new FormData();fd.append('chunk',slice,q.filename||file.name);fd.append('chunk_index',String(i));fd.append('total_chunks',String(total));
+      const fd=new FormData();fd.append('upload_id',String(q.upload_id||q.id));fd.append('chunk',slice,q.filename||file.name);fd.append('chunk_index',String(i));fd.append('total_chunks',String(total));
       loadedMap[i]=0;updateProgress();
       await uploadChunkWithProgress(base+'/chunk',headers,fd,(loaded,totalBytes)=>{loadedMap[i]=loaded;updateProgress()});
       loadedMap[i]=slice.size;received.add(i);updateProgress();break;

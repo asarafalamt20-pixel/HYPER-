@@ -205,6 +205,7 @@ app.post('/api/uploads/:uploadId/chunk',auth,chunkUpload.single('chunk'),async(r
   if(!req.file)return res.status(400).json({message:'Chunk required'});
   const n=Number(req.body.chunk_index); if(!Number.isInteger(n)||n<0)return res.status(400).json({message:'Invalid chunk index'});
   const target=path.join(d,'chunk-'+n+'.part');
+  fs.mkdirSync(d,{recursive:true});
   if(path.resolve(req.file.path)!==path.resolve(target)){fs.renameSync(req.file.path,target)}
   res.json({ok:true,chunk_index:n});
  }catch(e){try{if(req.file?.path)fs.unlinkSync(req.file.path)}catch{}res.status(500).json({message:e.message})}
