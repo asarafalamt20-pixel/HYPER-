@@ -26,7 +26,7 @@ async function db(){
  await pool.query(`CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY,username VARCHAR(50) UNIQUE NOT NULL,email VARCHAR(160) UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name VARCHAR(100) NOT NULL,full_name VARCHAR(100),channel_name VARCHAR(100),channel_description TEXT DEFAULT '',created_at TIMESTAMPTZ DEFAULT NOW(),avatar_url TEXT DEFAULT NULL);
  CREATE TABLE IF NOT EXISTS videos(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,title VARCHAR(200) NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT,type VARCHAR(20) DEFAULT 'video',category VARCHAR(30) DEFAULT 'Vlog',views INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW(),upload_key TEXT UNIQUE,duration_seconds INTEGER DEFAULT 0);
  ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100); ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_name VARCHAR(100); ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_description TEXT DEFAULT ''; ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_tags TEXT DEFAULT ''; UPDATE users SET full_name=COALESCE(full_name,display_name),channel_name=COALESCE(channel_name,display_name) WHERE full_name IS NULL OR channel_name IS NULL; ALTER TABLE videos ADD COLUMN IF NOT EXISTS category VARCHAR(30) DEFAULT 'Vlog'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS upload_key TEXT; CREATE UNIQUE INDEX IF NOT EXISTS videos_upload_key_uidx ON videos(upload_key) WHERE upload_key IS NOT NULL; CREATE TABLE IF NOT EXISTS subscriptions(subscriber_id INTEGER REFERENCES users(id) ON DELETE CASCADE,channel_id INTEGER REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(subscriber_id,channel_id));
- ALTER TABLE videos ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_status VARCHAR(20) DEFAULT 'approved'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_reason TEXT DEFAULT '';
+ ALTER TABLE videos ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_status VARCHAR(20) DEFAULT 'approved'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_reason TEXT DEFAULT ''; ALTER TABLE videos ADD COLUMN IF NOT EXISTS original_language VARCHAR(20) DEFAULT 'auto'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS language_tracks JSONB DEFAULT '{}'::jsonb; ALTER TABLE videos ADD COLUMN IF NOT EXISTS subtitle_tracks JSONB DEFAULT '{}'::jsonb;
  CREATE TABLE IF NOT EXISTS comments(id SERIAL PRIMARY KEY,video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,text TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
  CREATE TABLE IF NOT EXISTS watch_history(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,watched_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
  CREATE TABLE IF NOT EXISTS liked_videos(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,liked_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
@@ -183,6 +183,67 @@ app.get('/api/videos/:id',async(req,res)=>{
  try{let q=await pool.query('SELECT v.*,u.username,u.display_name channel,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});await pool.query('UPDATE videos SET views=views+1 WHERE id=$1',[req.params.id]);res.json(q.rows[0])}
  catch(e){res.status(500).json({message:e.message})}
 });
+
+// Resumable video upload API: chunks survive page refresh and are assembled only after all chunks arrive.
+const chunkUpload=multer({storage:multer.diskStorage({
+ destination:(req,file,cb)=>{try{const u=String(req.user.id),id=String(req.body.upload_id||'').replace(/[^a-zA-Z0-9_-]/g,'_');const d=path.join(dir,'.hyper-chunks',u,id);fs.mkdirSync(d,{recursive:true});cb(null,d)}catch(e){cb(e)}},
+ filename:(req,file,cb)=>cb(null,'chunk-'+String(req.body.chunk_index||0)+'.part')
+}),limits:{fileSize:8*1024*1024}});
+
+app.get('/api/uploads/:uploadId/status',auth,async(req,res)=>{
+ try{
+  const id=String(req.params.uploadId).replace(/[^a-zA-Z0-9_-]/g,'_'),d=path.join(dir,'.hyper-chunks',String(req.user.id),id);
+  if(pool){const q=await pool.query('SELECT * FROM videos WHERE upload_key=$1 LIMIT 1',[String(req.params.uploadId)]);if(q.rows[0])return res.json({complete:true,video:q.rows[0],received:[]})}
+  let received=[];if(fs.existsSync(d))received=fs.readdirSync(d).filter(x=>/^chunk-\d+\.part$/.test(x)).map(x=>Number(x.match(/\d+/)[0])).sort((a,b)=>a-b);
+  res.json({complete:false,received});
+ }catch(e){res.status(500).json({message:e.message})}
+});
+
+app.post('/api/uploads/:uploadId/chunk',auth,chunkUpload.single('chunk'),async(req,res)=>{
+ try{
+  const uploadId=String(req.params.uploadId), id=uploadId.replace(/[^a-zA-Z0-9_-]/g,'_'),d=path.join(dir,'.hyper-chunks',String(req.user.id),id);
+  if(!req.file)return res.status(400).json({message:'Chunk required'});
+  const n=Number(req.body.chunk_index); if(!Number.isInteger(n)||n<0)return res.status(400).json({message:'Invalid chunk index'});
+  const target=path.join(d,'chunk-'+n+'.part');
+  if(path.resolve(req.file.path)!==path.resolve(target)){fs.renameSync(req.file.path,target)}
+  res.json({ok:true,chunk_index:n});
+ }catch(e){try{if(req.file?.path)fs.unlinkSync(req.file.path)}catch{}res.status(500).json({message:e.message})}
+});
+
+app.post('/api/uploads/:uploadId/complete',auth,upload.single('thumbnail'),async(req,res)=>{
+ const uploadId=String(req.params.uploadId),id=uploadId.replace(/[^a-zA-Z0-9_-]/g,'_'),d=path.join(dir,'.hyper-chunks',String(req.user.id),id);
+ let assembled=null;
+ try{
+  if(!pool)return res.status(503).json({message:'Database is not connected. Add DATABASE_URL and restart the server.'});
+  const existing=await pool.query('SELECT * FROM videos WHERE upload_key=$1 LIMIT 1',[uploadId]);if(existing.rows[0]){try{fs.rmSync(d,{recursive:true,force:true})}catch{}return res.json(existing.rows[0])}
+  const uq=await pool.query('SELECT is_suspended FROM users WHERE id=$1',[req.user.id]);if(uq.rows[0]?.is_suspended)return res.status(403).json({message:'Your channel is currently suspended by HYPER Admin'});
+  const total=Number(req.body.total_chunks),durationSeconds=Math.max(0,Math.round(Number(req.body.duration_seconds||0)));
+  if(!Number.isInteger(total)||total<1||total>1000)return res.status(400).json({message:'Invalid total chunks'});
+  if(!fs.existsSync(d))return res.status(400).json({message:'Upload chunks not found'});
+  for(let i=0;i<total;i++)if(!fs.existsSync(path.join(d,'chunk-'+i+'.part')))return res.status(409).json({message:'Upload incomplete. Missing chunk '+i});
+  const titleText=String(req.body.title||'Untitled').slice(0,200),descText=String(req.body.description||''), moderationText=(titleText+' '+descText).toLowerCase();
+  const blockedTerms=['porn','xxx','pornography','nude','nudity','sex video','sexual video','explicit sexual'];
+  if(blockedTerms.some(k=>moderationText.includes(k)))return res.status(400).json({message:'Video upload blocked by HYPER safety filter. Sexual/explicit content is not allowed.'});
+  const safeName='resumable-'+Date.now()+'-'+String(req.body.filename||'video.mp4').replace(/[^a-zA-Z0-9._-]/g,'_');
+  assembled=path.join(dir,safeName);
+  const out=fs.createWriteStream(assembled);
+  for(let i=0;i<total;i++){const b=fs.readFileSync(path.join(d,'chunk-'+i+'.part'));out.write(b)}
+  await new Promise((resolve,reject)=>{out.end(()=>resolve());out.on('error',reject)});
+  let v='/uploads/'+safeName,t=req.file?'/uploads/'+req.file.filename:null;
+  if(storageConfigured){
+   const vk=storageKey(req.user.id,req.body.filename||safeName);v=await uploadPermanent(assembled,vk,req.body.mimetype||'video/mp4');
+   if(req.file){const tk=storageKey(req.user.id,req.file.originalname||'thumbnail');t=await uploadPermanent(req.file.path,tk,req.file.mimetype||'image/jpeg')}
+  }
+  const allowed=['Discover','Popular','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'];
+  const cat=allowed.includes(req.body.category)?req.body.category:'Discover';
+  const q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key,duration_seconds,original_language,language_tracks,subtitle_tracks) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',[req.user.id,titleText,descText,v,t,req.body.type==='short'?'short':'video',cat,uploadId,durationSeconds,String(req.body.original_language||'auto'),req.body.language_tracks&&typeof req.body.language_tracks==='string'?req.body.language_tracks:'{}',req.body.subtitle_tracks&&typeof req.body.subtitle_tracks==='string'?req.body.subtitle_tracks:'{}']);
+  try{fs.rmSync(d,{recursive:true,force:true});if(storageConfigured)fs.unlinkSync(assembled);if(storageConfigured&&req.file)fs.unlinkSync(req.file.path)}catch{}
+  await notifyAdmins('video_upload','New video uploaded',`Channel @${req.user.username} uploaded “${q.rows[0].title}”.`,req.user.id,q.rows[0].id);
+  const sq=await pool.query('SELECT subscriber_id FROM subscriptions WHERE channel_id=$1',[req.user.id]);for(const sub of sq.rows)await notifyUser(sub.subscriber_id,'subscription_upload',`New video from @${req.user.username}`,`@${req.user.username} uploaded “${q.rows[0].title}”.`,req.user.id,q.rows[0].id);
+  res.status(201).json(q.rows[0]);
+ }catch(e){try{if(assembled&&!storageConfigured)fs.unlinkSync(assembled);if(req.file&&!storageConfigured)fs.unlinkSync(req.file.path)}catch{}console.error('Resumable upload error:',e);res.status(500).json({message:'Resumable upload failed. Please retry.'})}
+});
+
 app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thumbnail',maxCount:1}]),async(req,res)=>{
  if(pool){const uq=await pool.query('SELECT is_suspended,email,channel_name,display_name FROM users WHERE id=$1',[req.user.id]);if(uq.rows[0]?.is_suspended)return res.status(403).json({message:'Your channel is currently suspended by HYPER Admin'});}
 
@@ -204,7 +265,7 @@ app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thum
    const vk=storageKey(req.user.id,vf.originalname); v=await uploadPermanent(path.join(dir,vf.filename),vk,vf.mimetype);
    let thumb=req.files.thumbnail?.[0]; if(thumb){const tk=storageKey(req.user.id,thumb.originalname);t=await uploadPermanent(path.join(dir,thumb.filename),tk,thumb.mimetype)}
  }
- let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key,duration_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',[req.user.id,titleText,descText,v,t,req.body.type==='short'?'short':'video',cat,uploadKey,durationSeconds]);
+ let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key,duration_seconds,original_language,language_tracks,subtitle_tracks) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',[req.user.id,titleText,descText,v,t,req.body.type==='short'?'short':'video',cat,uploadKey,durationSeconds,String(req.body.original_language||'auto'),req.body.language_tracks&&typeof req.body.language_tracks==='string'?req.body.language_tracks:'{}',req.body.subtitle_tracks&&typeof req.body.subtitle_tracks==='string'?req.body.subtitle_tracks:'{}']);
  if(storageConfigured){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}}
  await notifyAdmins('video_upload','New video uploaded',`Channel @${req.user.username} uploaded “${q.rows[0].title}”.`,req.user.id,q.rows[0].id); const sq=await pool.query('SELECT subscriber_id FROM subscriptions WHERE channel_id=$1',[req.user.id]); for(const sub of sq.rows){await notifyUser(sub.subscriber_id,'subscription_upload',`New video from @${req.user.username}`,`@${req.user.username} uploaded “${q.rows[0].title}”.`,req.user.id,q.rows[0].id)}
  res.status(201).json(q.rows[0])}
