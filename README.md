@@ -76,3 +76,11 @@ Set `HYPER_ADMIN_EMAIL` to the exact email used for the HYPER account. That HYPE
 
 ## Admin menu visibility
 The HYPER Admin option is shown inside Account & Channel only for the configured Admin email (`asarafalamt20@gmail.com`) or a server-marked `is_admin` account. Other users do not see the Admin option, and server-side admin authorization still protects `/api/admin/*`.
+
+## HYPER Support System (v1.9.1)
+- Settings → Help & feedback now opens a real support ticket system.
+- User can create tickets with category, subject and message, see previous tickets, chat/reply, and close tickets.
+- HYPER Admin → Support Inbox has search, status filter, ticket threads, reply, resolve and close controls.
+- New ticket/user reply creates an Admin notification; Admin reply/status change creates a user notification with the existing red notification dot.
+- Support messages are stored in PostgreSQL tables `support_tickets` and `support_messages`.
+- This version uses text messages only; attachments can be added later with the upload/storage system.
