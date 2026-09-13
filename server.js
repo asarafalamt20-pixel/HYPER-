@@ -50,7 +50,7 @@ const RZP_KEY=process.env.RAZORPAYX_KEY_ID||'';
 const RZP_SECRET=process.env.RAZORPAYX_KEY_SECRET||'';
 const RZP_ACCOUNT=process.env.RAZORPAYX_ACCOUNT_NUMBER||'';
 const ADMIN_KEY=process.env.HYPER_ADMIN_KEY||'';
-const ADMIN_EMAIL=String(process.env.HYPER_ADMIN_EMAIL||'').trim().toLowerCase();
+const ADMIN_EMAIL=String(process.env.HYPER_ADMIN_EMAIL||'asarafalamt20@gmail.com').trim().toLowerCase();
 function moneyPaise(v){return Math.round(Number(v||0));}
 async function ensureWallet(userId){await pool.query('INSERT INTO creator_wallets(user_id,enabled,creator_share_bps) VALUES($1,$2,$3) ON CONFLICT(user_id) DO NOTHING',[userId,MONETIZATION_LIVE,CREATOR_SHARE_BPS]);}
 function rzpAuth(){return 'Basic '+Buffer.from(RZP_KEY+':'+RZP_SECRET).toString('base64');}
