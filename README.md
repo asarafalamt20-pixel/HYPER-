@@ -68,3 +68,7 @@ Open `https://YOUR-HYPER-DOMAIN/admin` and enter `HYPER_ADMIN_KEY`. The dashboar
 - Daily revenue history
 
 The Admin 30% shown by HYPER is an accounting/ledger share. The actual cash settlement into HYPER's bank/provider account is controlled by the ad network/payment provider and its settlement cycle.
+
+
+## Same-email HYPER Admin
+Set `HYPER_ADMIN_EMAIL` to the exact email used for the HYPER account. That HYPER login becomes the Admin login; no separate Admin email/password is needed. The Admin page is `/admin`. Do not expose admin credentials or API secrets in frontend code.
