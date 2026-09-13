@@ -274,8 +274,9 @@ async function deleteVideo(id){if(!user)return auth();if(!confirm('Is video ko p
 
 let activeUploadXhrs=new Map(), uploadAbortControllers=new Map(), uploadRunning=new Set();
 function formatTransferRate(bytesPerSec){if(!isFinite(bytesPerSec)||bytesPerSec<=0)return '';if(bytesPerSec>=1048576)return (bytesPerSec/1048576).toFixed(1)+' MB/s';return Math.max(1,Math.round(bytesPerSec/1024))+' KB/s'}
-function openUploadDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('hyper-upload-queue',3);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('tasks'))db.createObjectStore('tasks',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
-async function queueBackgroundUpload(task){const db=await openUploadDB();await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').put({...task,state:task.state||'waiting'});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
+function openUploadDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('hyper-upload-queue',4);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('tasks'))db.createObjectStore('tasks',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+async function queueBackgroundUpload(task){const db=await openUploadDB();const record={...task,fileBlob:task.file||task.fileBlob||null,thumbnailBlob:task.thumbnail||task.thumbnailBlob||null,state:task.state||'waiting'};delete record.file;delete record.thumbnail;await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
+async function updateUploadRecord(id,patch={}){try{const db=await openUploadDB();await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite'),st=tx.objectStore('tasks'),r=st.get(id);r.onsuccess=()=>{const x=r.result;if(!x)return resolve();st.put({...x,...patch});};r.onerror=()=>reject(r.error);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){}}
 function removeBackgroundUpload(id){openUploadDB().then(db=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').delete(id);tx.oncomplete=()=>db.close()}).catch(()=>{})}
 async function registerBackgroundSync(){try{let reg=await navigator.serviceWorker?.ready;if(reg?.sync?.register)await reg.sync.register('hyper-upload');return true}catch(e){return false}}
 function uploadChunkWithProgress(url,headers,fd,onProgress){
@@ -293,40 +294,43 @@ function uploadChunkWithProgress(url,headers,fd,onProgress){
 async function uploadQueuedTask(q){
  if(uploadRunning.has(String(q.id)))return;
  let t=uploadTasks.find(x=>String(x.id)===String(q.id));
- if(!t){t={id:q.id,upload_id:q.upload_id||q.id,title:q.title||'Untitled',progress:Number(q.progress)||0,status:'paused',message:'Upload found — resuming…',background:true,size:q.file?.size||q.size||0,fingerprint:q.fingerprint||''};uploadTasks.push(t);persistUploadTasks();renderUploadDock()}
- if(!q.file||typeof q.file.slice!=='function'){t.status='error';t.message='Upload file not found. Please select the Video again.';persistUploadTasks();renderUploadDock();return}
+ if(!t){t={id:q.id,upload_id:q.upload_id||q.id,title:q.title||'Untitled',progress:Number(q.progress)||0,status:'paused',message:'Upload found — resuming…',background:true,size:(q.file||q.fileBlob)?.size||q.size||0,fingerprint:q.fingerprint||''};uploadTasks.push(t);persistUploadTasks();renderUploadDock()}
+ const file=q.file||q.fileBlob;
+ if(!file||typeof file.slice!=='function'){t.status='error';t.message='Upload file not found. Please select the Video again.';persistUploadTasks();renderUploadDock();return}
+ q.file=file;
  uploadRunning.add(String(q.id));
- const CHUNK=8*1024*1024, total=Math.ceil(q.file.size/CHUNK), concurrency=4;
+ const CHUNK=8*1024*1024, total=Math.ceil(file.size/CHUNK), concurrency=4;
  try{
   t.status='uploading';t.background=true;t.message='Checking upload progress…';persistUploadTasks();renderUploadDock();
   const token=safeGet('hyper_token',''),headers=token?{Authorization:'Bearer '+token}:{};
-  const base=A+'/api/uploads/'+encodeURIComponent(q.upload_id||q.id);
+  const base=A+'/uploads/'+encodeURIComponent(q.upload_id||q.id);
   const st=await fetch(base+'/status',{headers,cache:'no-store'});if(!st.ok)throw new Error('Upload session unavailable ('+st.status+')');
   const sd=await st.json();if(sd.complete){t.status='done';t.progress=100;t.message='Published successfully';removeBackgroundUpload(q.id);persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(q.id),1800);return}
   const received=new Set(sd.received||[]), pending=[];
   for(let i=0;i<total;i++)if(!received.has(i))pending.push(i);
   const loadedMap={};
-  for(let i=0;i<total;i++)if(received.has(i))loadedMap[i]=Math.min(CHUNK,q.file.size-i*CHUNK);
+  for(let i=0;i<total;i++)if(received.has(i))loadedMap[i]=Math.min(CHUNK,file.size-i*CHUNK);
   const updateProgress=()=>{
    let loaded=0;for(const n of Object.keys(loadedMap))loaded+=loadedMap[n]||0;
-   const frac=q.file.size?loaded/q.file.size:0;
+   const frac=file.size?loaded/file.size:0;
    t.progress=Math.min(95,Math.floor(frac*95));
    const now=Date.now(),prev=t._speedStamp||now,delta=Math.max(1,(now-prev)/1000),bytesNow=loaded-(t._speedBytes||0);
    if(bytesNow>0){const inst=bytesNow/delta;t._speed=t._speed?(.7*t._speed+.3*inst):inst;t._speedBytes=loaded;t._speedStamp=now}
    const speed=t._speed>0?formatTransferRate(t._speed):'';
    t.message=speed?`Uploading… ${t.progress}% • ${speed}`:`Uploading… ${t.progress}%`;
    persistUploadTasks();renderUploadDock();
+   if(!t._dbStamp||Date.now()-t._dbStamp>900){t._dbStamp=Date.now();updateUploadRecord(q.id,{progress:t.progress,state:'uploading',size:file.size,filename:q.filename||file.name,mimetype:file.type||'video/mp4'});}
   };
   let cursor=0;
   async function worker(){
    while(true){
     const pos=cursor++;if(pos>=pending.length)return;
     const i=pending[pos];
-    const slice=q.file.slice(i*CHUNK,Math.min(q.file.size,(i+1)*CHUNK));
+    const slice=file.slice(i*CHUNK,Math.min(file.size,(i+1)*CHUNK));
     let attempt=0;
     while(true){
      try{
-      const fd=new FormData();fd.append('chunk',slice,q.filename||q.file.name);fd.append('chunk_index',String(i));fd.append('total_chunks',String(total));
+      const fd=new FormData();fd.append('chunk',slice,q.filename||file.name);fd.append('chunk_index',String(i));fd.append('total_chunks',String(total));
       loadedMap[i]=0;updateProgress();
       await uploadChunkWithProgress(base+'/chunk',headers,fd,(loaded,totalBytes)=>{loadedMap[i]=loaded;updateProgress()});
       loadedMap[i]=slice.size;updateProgress();break;
@@ -336,7 +340,7 @@ async function uploadQueuedTask(q){
   }
   await Promise.all(Array.from({length:Math.min(concurrency,pending.length)},()=>worker()));
   t.progress=97;t.message='Finalizing video…';persistUploadTasks();renderUploadDock();
-  const fd=new FormData();fd.append('title',q.title||'Untitled');fd.append('description',q.description||'');fd.append('type',q.type||'video');fd.append('category',q.category||'Discover');fd.append('upload_id',String(q.upload_id||q.id));fd.append('duration_seconds',String(q.duration_seconds||0));fd.append('total_chunks',String(total));fd.append('filename',q.filename||q.file.name);fd.append('mimetype',q.file.type||'video/mp4');fd.append('original_language',q.original_language||'auto');fd.append('language_tracks',q.language_tracks||'{}');fd.append('subtitle_tracks',q.subtitle_tracks||'{}');if(q.thumbnail)fd.append('thumbnail',q.thumbnail,q.thumbnailName||q.thumbnail.name);
+  const fd=new FormData();fd.append('title',q.title||'Untitled');fd.append('description',q.description||'');fd.append('type',q.type||'video');fd.append('category',q.category||'Discover');fd.append('upload_id',String(q.upload_id||q.id));fd.append('duration_seconds',String(q.duration_seconds||0));fd.append('total_chunks',String(total));fd.append('filename',q.filename||file.name);fd.append('mimetype',file.type||'video/mp4');fd.append('original_language',q.original_language||'auto');fd.append('language_tracks',q.language_tracks||'{}');fd.append('subtitle_tracks',q.subtitle_tracks||'{}');const thumb=q.thumbnail||q.thumbnailBlob;if(thumb)fd.append('thumbnail',thumb,q.thumbnailName||thumb.name||'thumbnail.jpg');
   const r=await fetch(base+'/complete',{method:'POST',headers,body:fd});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.message||'Publish failed');
   removeBackgroundUpload(q.id);t.status='done';t.progress=100;t.message='Published successfully';t._live=false;t.background=false;persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(q.id),1800);await loadFeedOnly();
  }catch(e){t.status='paused';t._live=false;t.background=true;t.message='Upload paused — tap Resume or refresh to continue';persistUploadTasks();renderUploadDock();registerBackgroundSync()}
@@ -357,14 +361,14 @@ async function reconcileUploadQueue(){
   persistUploadTasks();renderUploadDock()
  }catch(e){console.warn('Upload queue resume failed',e)}
 }
-function removeUploadTask(id){uploadTasks=uploadTasks.filter(x=>String(x.id)!==String(id));persistUploadTasks();renderUploadDock()}
+async function removeUploadTask(id){const target=uploadTasks.find(x=>String(x.id)===String(id));const fp=target?.fingerprint||'';for(const [k,xhr] of activeUploadXhrs){try{if(String(k).includes(String(id)))xhr.abort()}catch(e){}}uploadRunning.delete(String(id));try{const db=await openUploadDB();await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite'),st=tx.objectStore('tasks'),r=st.getAll();r.onsuccess=()=>{for(const x of (r.result||[])){if(String(x.id)===String(id)||(fp&&x.fingerprint===fp))st.delete(x.id)} };r.onerror=()=>reject(r.error);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){}removeBackgroundUpload(id);uploadTasks=uploadTasks.filter(x=>String(x.id)!==String(id)&&!(fp&&x.fingerprint===fp));persistUploadTasks();renderUploadDock()}
 function renderUploadDock(){
  let el=document.getElementById('uploadDock');if(!el)return;
  uploadTasks=uploadTasks.filter(x=>x.status!=='done'||x.keepDone);
  const seen=new Set(),deduped=[];
  [...uploadTasks].reverse().forEach(x=>{
    const key=x.fingerprint||((x.title||'').trim().toLowerCase()+'|'+(x.size||0));
-   if(seen.has(key)){if(x.id!=null)removeBackgroundUpload(x.id);return}
+   if(seen.has(key))return
    seen.add(key);deduped.push(x)
  });
  uploadTasks=deduped.reverse();persistUploadTasks();
@@ -426,6 +430,23 @@ const UI_T={
  ur:{'Home':'ہوم','Shorts':'شارٹس','Subscriptions':'سبسکرپشنز','Library':'لائبریری','Sign in':'سائن اِن','Search videos, channels...':'ویڈیوز، چینلز تلاش کریں...','Settings':'سیٹنگز','Language':'زبان','App Settings':'ایپ سیٹنگز','Account & Channel':'اکاؤنٹ اور چینل','Notifications':'نوٹیفکیشنز','Dark / Light Mode':'ڈارک / لائٹ موڈ','Autoplay':'آٹو پلے','Data Saver':'ڈیٹا سیور','Video Quality':'ویڈیو کوالٹی','Privacy':'پرائیویسی','Help & feedback':'مدد اور فیڈبیک','Create':'بنائیں','Upload':'اپ لوڈ','Start Upload':'اپ لوڈ شروع کریں','Video file':'ویڈیو فائل','Thumbnail':'تھمب نیل','Video Language':'ویڈیو کی زبان','Search results':'تلاش کے نتائج','Channels':'چینلز','Videos':'ویڈیوز','Back':'واپس','Subscribe':'سبسکرائب','Subscribed':'سبسکرائب شدہ','Save':'محفوظ کریں','Share':'شیئر','Download':'ڈاؤن لوڈ','Comments':'تبصرے','Related videos':'متعلقہ ویڈیوز'}
 };
 UI_T.other=UI_T.en;
+const UI_EXTRA={
+ en:{'All':'All','Discover':'Discover','Popular':'Popular','Entertainment':'Entertainment','News':'News','Education':'Education','Sports':'Sports','Music':'Music','Gaming':'Gaming','Lifestyle':'Lifestyle','Creator':'Creator','For You':'For You','WATCH • CREATE • SHARE':'WATCH • CREATE • SHARE','Your World on HYPER':'Your World on HYPER','Discover creators and videos you love.':'Discover creators and videos you love.','Video':'Video','Short':'Short','Description':'Description','HYPER Category':'HYPER Category','Video title':'Video title','Upload':'Upload','Messages':'Messages','Mark all as read':'Mark all as read','No messages yet.':'No messages yet.','Resume Upload':'Resume Upload','Delete':'Delete','Uploading…':'Uploading…','Upload paused — tap Resume or refresh to continue':'Upload paused — tap Resume or refresh to continue','Published successfully':'Published successfully','Downloading…':'Downloading…','Download complete':'Download complete','No videos here yet.':'No videos here yet.','Watch History':'Watch History','Downloaded Videos':'Downloaded Videos','Liked Videos':'Liked Videos','Saved Files':'Saved Files','Your Videos':'Your Videos'},
+ hi:{'All':'सभी','Discover':'डिस्कवर','Popular':'लोकप्रिय','Entertainment':'मनोरंजन','News':'समाचार','Education':'शिक्षा','Sports':'खेल','Music':'संगीत','Gaming':'गेमिंग','Lifestyle':'लाइफस्टाइल','Creator':'क्रिएटर','For You':'आपके लिए','WATCH • CREATE • SHARE':'देखें • बनाएं • शेयर करें','Your World on HYPER':'HYPER पर आपकी दुनिया','Discover creators and videos you love.':'अपने पसंदीदा क्रिएटर और वीडियो खोजें।','Video':'वीडियो','Short':'शॉर्ट','Description':'विवरण','HYPER Category':'HYPER कैटेगरी','Video title':'वीडियो का शीर्षक','Messages':'संदेश','Mark all as read':'सभी को पढ़ा हुआ करें','Resume Upload':'अपलोड फिर शुरू करें','Delete':'डिलीट','Uploading…':'अपलोड हो रहा है…','Upload paused — tap Resume or refresh to continue':'अपलोड रुका है — Resume दबाएं या रिफ्रेश करें','Published successfully':'सफलतापूर्वक प्रकाशित','Downloading…':'डाउनलोड हो रहा है…','Download complete':'डाउनलोड पूरा हुआ','No videos here yet.':'अभी यहां कोई वीडियो नहीं है।','Watch History':'देखने का इतिहास','Downloaded Videos':'डाउनलोड किए गए वीडियो','Liked Videos':'पसंद किए गए वीडियो','Saved Files':'सेव की गई फाइलें','Your Videos':'आपके वीडियो'},
+ bho:{'All':'सभे','Discover':'डिस्कवर','Popular':'लोकप्रिय','Entertainment':'मनोरंजन','News':'समाचार','Education':'पढ़ाई','Sports':'खेल','Music':'संगीत','Gaming':'गेमिंग','Lifestyle':'लाइफस्टाइल','Creator':'क्रिएटर','For You':'रउरा खातिर','WATCH • CREATE • SHARE':'देखीं • बनाईं • शेयर करीं','Your World on HYPER':'HYPER पर रउरा के दुनिया','Discover creators and videos you love.':'आपन पसंद के क्रिएटर आ वीडियो खोजीं।','Video':'वीडियो','Short':'शॉर्ट','Description':'विवरण','HYPER Category':'HYPER कैटेगरी','Video title':'वीडियो के नाम','Messages':'संदेश','Mark all as read':'सभे पढ़ल मान लीं','Resume Upload':'अपलोड फेरू शुरू करीं','Delete':'डिलीट','Uploading…':'अपलोड हो रहल बा…','Upload paused — tap Resume or refresh to continue':'अपलोड रुकल बा — Resume दबाईं या रिफ्रेश करीं','Published successfully':'सफलता से पब्लिश भइल','Downloading…':'डाउनलोड हो रहल बा…','Download complete':'डाउनलोड पूरा भइल'},
+ bn:{'All':'সব','Discover':'ডিসকভার','Popular':'জনপ্রিয়','Entertainment':'বিনোদন','News':'খবর','Education':'শিক্ষা','Sports':'খেলা','Music':'সঙ্গীত','Gaming':'গেমিং','Lifestyle':'লাইফস্টাইল','Creator':'ক্রিয়েটর','For You':'আপনার জন্য','Video':'ভিডিও','Short':'শর্ট','Description':'বিবরণ','Resume Upload':'আপলোড আবার শুরু করুন','Delete':'মুছুন','Uploading…':'আপলোড হচ্ছে…','Published successfully':'সফলভাবে প্রকাশিত','Downloading…':'ডাউনলোড হচ্ছে…','Download complete':'ডাউনলোড সম্পূর্ণ'},
+ mr:{'All':'सर्व','Discover':'डिस्कव्हर','Popular':'लोकप्रिय','Entertainment':'मनोरंजन','News':'बातम्या','Education':'शिक्षण','Sports':'क्रीडा','Music':'संगीत','Gaming':'गेमिंग','Lifestyle':'लाइफस्टाइल','Creator':'क्रिएटर','For You':'तुमच्यासाठी','Video':'व्हिडिओ','Short':'शॉर्ट','Description':'वर्णन','Resume Upload':'अपलोड पुन्हा सुरू करा','Delete':'हटवा','Uploading…':'अपलोड होत आहे…','Published successfully':'यशस्वीपणे प्रकाशित','Downloading…':'डाउनलोड होत आहे…','Download complete':'डाउनलोड पूर्ण'},
+ gu:{'All':'બધા','Discover':'ડિસ્કવર','Popular':'લોકપ્રિય','Entertainment':'મનોરંજન','News':'સમાચાર','Education':'શિક્ષણ','Sports':'રમતગમત','Music':'સંગીત','Gaming':'ગેમિંગ','Lifestyle':'લાઇફસ્ટાઇલ','Creator':'ક્રિએટર','For You':'તમારા માટે','Video':'વિડિયો','Short':'શોર્ટ','Description':'વર્ણન','Resume Upload':'અપલોડ ફરી શરૂ કરો','Delete':'કાઢી નાખો','Uploading…':'અપલોડ થઈ રહ્યું છે…','Published successfully':'સફળતાપૂર્વક પ્રકાશિત','Downloading…':'ડાઉનલોડ થઈ રહ્યું છે…','Download complete':'ડાઉનલોડ પૂર્ણ'},
+ ta:{'All':'அனைத்தும்','Discover':'கண்டறிதல்','Popular':'பிரபலமானவை','Entertainment':'பொழுதுபோக்கு','News':'செய்திகள்','Education':'கல்வி','Sports':'விளையாட்டு','Music':'இசை','Gaming':'கேமிங்','Lifestyle':'வாழ்க்கை முறை','Creator':'கிரியேட்டர்','For You':'உங்களுக்காக','Video':'வீடியோ','Short':'ஷார்ட்','Description':'விளக்கம்','Resume Upload':'பதிவேற்றத்தை மீண்டும் தொடங்கு','Delete':'நீக்கு','Uploading…':'பதிவேற்றுகிறது…','Published successfully':'வெற்றிகரமாக வெளியிடப்பட்டது','Downloading…':'பதிவிறக்குகிறது…','Download complete':'பதிவிறக்கம் முடிந்தது'},
+ te:{'All':'అన్నీ','Discover':'డిస్కవర్','Popular':'ప్రముఖం','Entertainment':'వినోదం','News':'వార్తలు','Education':'విద్య','Sports':'క్రీడలు','Music':'సంగీతం','Gaming':'గేమింగ్','Lifestyle':'లైఫ్‌స్టైల్','Creator':'క్రియేటర్','For You':'మీ కోసం','Video':'వీడియో','Short':'షార్ట్','Description':'వివరణ','Resume Upload':'అప్‌లోడ్ మళ్లీ ప్రారంభించండి','Delete':'తొలగించు','Uploading…':'అప్‌లోడ్ అవుతోంది…','Published successfully':'విజయవంతంగా ప్రచురించబడింది','Downloading…':'డౌన్‌లోడ్ అవుతోంది…','Download complete':'డౌన్‌లోడ్ పూర్తైంది'},
+ kn:{'All':'ಎಲ್ಲಾ','Discover':'ಡಿಸ್ಕವರ್','Popular':'ಜನಪ್ರಿಯ','Entertainment':'ಮನರಂಜನೆ','News':'ಸುದ್ದಿ','Education':'ಶಿಕ್ಷಣ','Sports':'ಕ್ರೀಡೆ','Music':'ಸಂಗೀತ','Gaming':'ಗೇಮಿಂಗ್','Lifestyle':'ಲೈಫ್‌ಸ್ಟೈಲ್','Creator':'ಕ್ರಿಯೇಟರ್','For You':'ನಿಮಗಾಗಿ','Video':'ವೀಡಿಯೊ','Short':'ಶಾರ್ಟ್','Description':'ವಿವರಣೆ','Resume Upload':'ಅಪ್‌ಲೋಡ್ ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಿ','Delete':'ಅಳಿಸಿ','Uploading…':'ಅಪ್‌ಲೋಡ್ ಆಗುತ್ತಿದೆ…','Published successfully':'ಯಶಸ್ವಿಯಾಗಿ ಪ್ರಕಟಿಸಲಾಗಿದೆ','Downloading…':'ಡೌನ್‌ಲೋಡ್ ಆಗುತ್ತಿದೆ…','Download complete':'ಡೌನ್‌ಲೋಡ್ ಪೂರ್ಣ'},
+ ml:{'All':'എല്ലാം','Discover':'ഡിസ്കവർ','Popular':'ജനപ്രിയം','Entertainment':'വിനോദം','News':'വാർത്ത','Education':'വിദ്യാഭ്യാസം','Sports':'കായികം','Music':'സംഗീതം','Gaming':'ഗെയിമിംഗ്','Lifestyle':'ലൈഫ്‌സ്റ്റൈൽ','Creator':'ക്രിയേറ്റർ','For You':'നിങ്ങൾക്കായി','Video':'വീഡിയോ','Short':'ഷോർട്ട്','Description':'വിവരണം','Resume Upload':'അപ്‌ലോഡ് വീണ്ടും തുടങ്ങുക','Delete':'ഇല്ലാതാക്കുക','Uploading…':'അപ്‌ലോഡ് ചെയ്യുന്നു…','Published successfully':'വിജയകരമായി പ്രസിദ്ധീകരിച്ചു','Downloading…':'ഡൗൺലോഡ് ചെയ്യുന്നു…','Download complete':'ഡൗൺലോഡ് പൂർത്തിയായി'},
+ pa:{'All':'ਸਾਰੇ','Discover':'ਡਿਸਕਵਰ','Popular':'ਪ੍ਰਸਿੱਧ','Entertainment':'ਮਨੋਰੰਜਨ','News':'ਖ਼ਬਰਾਂ','Education':'ਸਿੱਖਿਆ','Sports':'ਖੇਡਾਂ','Music':'ਸੰਗੀਤ','Gaming':'ਗੇਮਿੰਗ','Lifestyle':'ਲਾਈਫਸਟਾਈਲ','Creator':'ਕ੍ਰੀਏਟਰ','For You':'ਤੁਹਾਡੇ ਲਈ','Video':'ਵੀਡੀਓ','Short':'ਸ਼ਾਰਟ','Description':'ਵੇਰਵਾ','Resume Upload':'ਅੱਪਲੋਡ ਮੁੜ ਸ਼ੁਰੂ ਕਰੋ','Delete':'ਮਿਟਾਓ','Uploading…':'ਅੱਪਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…','Published successfully':'ਸਫਲਤਾਪੂਰਵਕ ਪ੍ਰਕਾਸ਼ਿਤ','Downloading…':'ਡਾਊਨਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…','Download complete':'ਡਾਊਨਲੋਡ ਪੂਰਾ'},
+ ur:{'All':'سب','Discover':'دریافت','Popular':'مقبول','Entertainment':'تفریح','News':'خبریں','Education':'تعلیم','Sports':'کھیل','Music':'موسیقی','Gaming':'گیمنگ','Lifestyle':'طرز زندگی','Creator':'کریئیٹر','For You':'آپ کے لیے','Video':'ویڈیو','Short':'شارٹ','Description':'تفصیل','Resume Upload':'اپ لوڈ دوبارہ شروع کریں','Delete':'حذف کریں','Uploading…':'اپ لوڈ ہو رہا ہے…','Published successfully':'کامیابی سے شائع ہوا','Downloading…':'ڈاؤن لوڈ ہو رہا ہے…','Download complete':'ڈاؤن لوڈ مکمل'},
+ other:{'All':'All','Discover':'Discover','Popular':'Popular','Entertainment':'Entertainment','News':'News','Education':'Education','Sports':'Sports','Music':'Music','Gaming':'Gaming','Lifestyle':'Lifestyle','Creator':'Creator','For You':'For You','Video':'Video','Short':'Short','Description':'Description','Resume Upload':'Resume Upload','Delete':'Delete','Uploading…':'Uploading…','Published successfully':'Published successfully','Downloading…':'Downloading…','Download complete':'Download complete'}
+};
+Object.keys(UI_EXTRA).forEach(k=>UI_T[k]={...(UI_T[k]||{}),...UI_EXTRA[k]});
+
 function chooseLanguage(){
  const cur=settingsState.language||'hi';
  const box=document.createElement('div');box.className='languageModal';box.id='languageModal';
@@ -441,17 +462,26 @@ function selectAppLanguage(k){
 } 
 function applyLanguage(){
  const lang=settingsState.language||'hi', d=UI_T[lang]||UI_T.en;
- document.documentElement.lang=lang==='hi'?'hi':lang==='bho'?'hi':lang==='bn'?'bn':lang==='mr'?'mr':lang==='gu'?'gu':lang==='ta'?'ta':lang==='te'?'te':lang==='kn'?'kn':lang==='ml'?'ml':lang==='pa'?'pa':lang==='ur'?'ur':'en';
+ const langMap={hi:'hi',bho:'hi',bn:'bn',mr:'mr',gu:'gu',ta:'ta',te:'te',kn:'kn',ml:'ml',pa:'pa',ur:'ur'};
+ document.documentElement.lang=langMap[lang]||'en';
+ document.documentElement.dir=lang==='ur'?'rtl':'ltr';
  document.querySelectorAll('[placeholder]').forEach(el=>{const v=el.getAttribute('placeholder');if(d[v])el.setAttribute('placeholder',d[v])});
- document.querySelectorAll('button, h1, h2, h3, label, small, p, span').forEach(el=>{
-   if(el.children.length) return;
-   const raw=(el.textContent||'').trim();
-   if(d[raw]) el.textContent=d[raw];
+ const allText=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+ const nodes=[];while(allText.nextNode())nodes.push(allText.currentNode);
+ nodes.forEach(node=>{
+   const raw=(node.nodeValue||'').trim(); if(!raw)return;
+   let key=raw;
+   if(!d[key]){
+     const stripped=raw.replace(/^[^\p{L}\p{N}]+/u,'').trim();
+     if(d[stripped]){
+       const lead=raw.slice(0,raw.indexOf(stripped));node.nodeValue=lead+d[stripped];return;
+     }
+   }
+   if(d[key])node.nodeValue=raw.replace(key,d[key]);
  });
  document.querySelectorAll('option').forEach(el=>{const raw=(el.textContent||'').trim();if(d[raw])el.textContent=d[raw]});
  const title=document.querySelector('title');if(title)title.textContent='HYPER';
 }
-
 function setVideoLanguage(lang){if(!selected)return;const tracks=selected.language_tracks&&typeof selected.language_tracks==='object'?selected.language_tracks:{};const url=lang==='auto'?selected.video_url:tracks[lang];if(!url)return alert(languageName(lang)+' audio/video track available nahi hai. Original video language: '+languageName(selected.original_language||'auto'));const p=document.getElementById('player');if(!p)return;const pos=p.currentTime,was=!p.paused;p.src=mediaUrl(url);p.addEventListener('loadedmetadata',()=>{try{p.currentTime=Math.min(pos,p.duration||pos)}catch(e){}if(was)p.play().catch(()=>{})},{once:true});p.load()}
 function toggleSetting(k){settingsState[k]=!settingsState[k];persist();render()};function downloadQuality(){let a=['360p','480p','720p','1080p'],i=a.indexOf(settingsState.downloadQuality);settingsState.downloadQuality=a[(i+1)%a.length];persist();render()};async function setAccountVisibility(){if(!user)return auth();let next=!settingsState.private;settingsState.private=next;persist();try{let r=await api('/me/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_private:next})});settingsState.private=!!r.is_private;persist();render()}catch(e){settingsState.private=!next;persist();alert(e.message)}};function chooseQuality(){let a=['Auto','360p','480p','720p','1080p'],i=a.indexOf(settingsState.videoQuality||'Auto');settingsState.videoQuality=a[(i+1)%a.length];settingsState.downloadQuality=settingsState.videoQuality==='Auto'?'720p':settingsState.videoQuality;persist();render()}
 function saveAccounts(){safeSet('hyper_accounts',JSON.stringify(accountList.slice(-8)))}

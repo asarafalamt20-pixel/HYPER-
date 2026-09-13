@@ -92,3 +92,12 @@ The HYPER Admin option is shown inside Account & Channel only for the configured
 - Download progress shows percentage when the video server allows browser progress (XHR/CORS).
 - Settings now includes Language selection.
 - Upload form includes Video Language and watch page includes Video Language selector.
+
+
+## v2.0.4 Fixes
+- Fixed resumable upload endpoint path (`/api/uploads/...`, not `/api/api/uploads/...`).
+- Persisted upload File/thumbnail blobs in IndexedDB for refresh resume.
+- Upload progress is periodically persisted.
+- Delete removes matching upload task(s) from IndexedDB and stops active upload requests.
+- Duplicate upload tasks are merged by fingerprint.
+- Expanded language translation for app UI, including nested/static navigation text and categories.
