@@ -1,10 +1,16 @@
 const express=require('express'),cors=require('cors'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),multer=require('multer'),path=require('path'),fs=require('fs');
 const {Pool}=require('pg');
+const {S3Client,PutObjectCommand,DeleteObjectCommand}=require('@aws-sdk/client-s3');
 const app=express(),PORT=process.env.PORT||10000,SECRET=process.env.JWT_SECRET||'dev-secret';
 app.use(cors());app.use(express.json());
 // Always fetch fresh feed/API data so newly published videos appear for every user/device.
 app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');next()});
 const dir=path.join(__dirname,'uploads');fs.mkdirSync(dir,{recursive:true});
+const storageConfigured=!!(process.env.STORAGE_ENDPOINT&&process.env.STORAGE_BUCKET&&process.env.STORAGE_ACCESS_KEY_ID&&process.env.STORAGE_SECRET_ACCESS_KEY&&process.env.STORAGE_PUBLIC_BASE_URL);
+const s3=storageConfigured?new S3Client({endpoint:process.env.STORAGE_ENDPOINT,region:process.env.STORAGE_REGION||'auto',credentials:{accessKeyId:process.env.STORAGE_ACCESS_KEY_ID,secretAccessKey:process.env.STORAGE_SECRET_ACCESS_KEY},forcePathStyle:false}):null;
+function storageKey(userId,filename){return `users/${userId}/${Date.now()}-${String(filename).replace(/[^a-zA-Z0-9._-]/g,'_')}`}
+async function uploadPermanent(localPath,key,contentType){if(!storageConfigured)return null;await s3.send(new PutObjectCommand({Bucket:process.env.STORAGE_BUCKET,Key:key,Body:fs.createReadStream(localPath),ContentType:contentType||'application/octet-stream'}));return process.env.STORAGE_PUBLIC_BASE_URL.replace(/\/$/,'')+'/'+key.split('/').map(encodeURIComponent).join('/')}
+async function deletePermanent(url){if(!storageConfigured||!url)return;const base=process.env.STORAGE_PUBLIC_BASE_URL.replace(/\/$/,'')+'/';if(!String(url).startsWith(base))return;const key=decodeURIComponent(String(url).slice(base.length));try{await s3.send(new DeleteObjectCommand({Bucket:process.env.STORAGE_BUCKET,Key:key}))}catch(e){console.warn('Storage delete failed:',e.message)}}
 const upload=multer({storage:multer.diskStorage({destination:dir,filename:(r,f,cb)=>cb(null,Date.now()+'-'+f.originalname.replace(/[^a-zA-Z0-9._-]/g,'_'))}),limits:{fileSize:250*1024*1024}});
 app.use('/uploads',express.static(dir));
 const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.NODE_ENV==='production'?{rejectUnauthorized:false}:false}):null;
@@ -28,7 +34,7 @@ function auth(req,res,next){const h=req.headers.authorization||'';try{req.user=j
 
 app.get('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let q=await pool.query("SELECT id,username,email,display_name,COALESCE(full_name,display_name) full_name,COALESCE(channel_name,display_name) channel_name,COALESCE(channel_description,'') channel_description,avatar_url FROM users WHERE id=$1",[req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
 app.put('/api/me/profile',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected on the server'});try{let a=String(req.body.avatar_url||'');let fn=String(req.body.full_name||'').trim();let cn=String(req.body.channel_name||'').trim();let cd=String(req.body.channel_description||'').trim();if(a&&a.length>1100000)return res.status(400).json({message:'Profile picture is too large'});if(fn&&(fn.length<2||fn.length>100))return res.status(400).json({message:'User name must be 2-100 characters'});if(cn&&(cn.length<2||cn.length>100))return res.status(400).json({message:'Channel name must be 2-100 characters'});if(cd.length>500)return res.status(400).json({message:'Channel description must be 500 characters or less'});let q=await pool.query("UPDATE users SET avatar_url=COALESCE(NULLIF($1,''),avatar_url),full_name=COALESCE(NULLIF($2,''),full_name),channel_name=COALESCE(NULLIF($3,''),channel_name),channel_description=$4,display_name=COALESCE(NULLIF($3,''),display_name) WHERE id=$5 RETURNING id,username,email,display_name,COALESCE(full_name,display_name) full_name,COALESCE(channel_name,display_name) channel_name,COALESCE(channel_description,'') channel_description,avatar_url",[a,fn,cn,cd,req.user.id]);res.json({user:q.rows[0]})}catch(e){res.status(500).json({message:e.message})}});
-app.get('/api/health',(r,s)=>s.json({ok:true,app:'HYPER'}));
+app.get('/api/health',(r,s)=>s.json({ok:true,app:'HYPER',storage:storageConfigured?'permanent':'local',message:storageConfigured?'Permanent storage enabled':'Permanent storage not configured; uploads use local disk'}));
 
 app.post('/api/auth/register',async(req,res)=>{
  try{
@@ -111,10 +117,16 @@ app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thum
  try{let v='/uploads/'+vf.filename,t=req.files.thumbnail?.[0]?'/uploads/'+req.files.thumbnail[0].filename:null;
  const uploadKey=String(req.body.upload_id||'').trim()||null;
  if(uploadKey){const existing=await pool.query('SELECT * FROM videos WHERE upload_key=$1 LIMIT 1',[uploadKey]);if(existing.rows[0]){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}return res.status(200).json(existing.rows[0])}}
- let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[req.user.id,String(req.body.title||'Untitled').slice(0,200),req.body.description||'',v,t,req.body.type==='short'?'short':'video',cat,uploadKey]);res.status(201).json(q.rows[0])}
- catch(e){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}console.error('Publish error:',e);res.status(500).json({message:'Publish failed. Please try again.'})}
+ if(storageConfigured){
+   const vk=storageKey(req.user.id,vf.originalname); v=await uploadPermanent(path.join(dir,vf.filename),vk,vf.mimetype);
+   let thumb=req.files.thumbnail?.[0]; if(thumb){const tk=storageKey(req.user.id,thumb.originalname);t=await uploadPermanent(path.join(dir,thumb.filename),tk,thumb.mimetype)}
+ }
+ let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[req.user.id,String(req.body.title||'Untitled').slice(0,200),req.body.description||'',v,t,req.body.type==='short'?'short':'video',cat,uploadKey]);
+ if(storageConfigured){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}}
+ res.status(201).json(q.rows[0])}
+ catch(e){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}console.error('Publish error:',e);res.status(500).json({message:storageConfigured?'Permanent storage upload failed. Please try again.':'Publish failed. Please try again.'})}
 });
-app.delete('/api/videos/:id',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected'});try{let q=await pool.query('SELECT video_url,thumbnail_url FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Video not found or not yours'});await pool.query('DELETE FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);for(const u of [q.rows[0].video_url,q.rows[0].thumbnail_url]){if(u&&String(u).startsWith('/uploads/')){try{fs.unlinkSync(path.join(dir,String(u).replace(/^\/uploads\//,'')))}catch{}}}res.json({deleted:true})}catch(e){res.status(500).json({message:e.message})}});
+app.delete('/api/videos/:id',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected'});try{let q=await pool.query('SELECT video_url,thumbnail_url FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Video not found or not yours'});await pool.query('DELETE FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);for(const u of [q.rows[0].video_url,q.rows[0].thumbnail_url]){if(u&&String(u).startsWith('/uploads/')){try{fs.unlinkSync(path.join(dir,String(u).replace(/^\/uploads\//,'')))}catch{}}else await deletePermanent(u)}res.json({deleted:true})}catch(e){res.status(500).json({message:e.message})}});
 app.post('/api/videos/:id/view',async(req,res)=>{
  if(!pool){let v=demo.find(x=>String(x.id)===String(req.params.id));return v?res.json({views:(v.views||0)+1}):res.status(404).json({message:'Not found'})}
  try{let q=await pool.query('UPDATE videos SET views=views+1 WHERE id=$1 RETURNING views',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});res.json({views:q.rows[0].views})}catch(e){res.status(500).json({message:e.message})}
