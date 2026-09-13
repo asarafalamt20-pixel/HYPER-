@@ -46,7 +46,7 @@ app.get('/api/studio/overview',auth,async(req,res)=>{
    pool.query(`SELECT COUNT(*)::int uploads,COUNT(*) FILTER(WHERE type='video')::int videos,COUNT(*) FILTER(WHERE type='short')::int shorts,COALESCE(SUM(views),0)::int views,COALESCE(SUM(likes),0)::int likes FROM videos WHERE user_id=$1`,[req.user.id]),
    pool.query(`SELECT id,title,type,category,views,likes,duration_seconds,created_at,thumbnail_url FROM videos WHERE user_id=$1 ORDER BY (views + likes*25) DESC,created_at DESC LIMIT 10`,[req.user.id])
   ]);
-  const months=await pool.query(`SELECT TO_CHAR(DATE_TRUNC('month',created_at),'Mon YYYY') month,COUNT(*)::int uploads,COALESCE(SUM(views),0)::int views FROM videos WHERE user_id=$1 GROUP BY 1,DATE_TRUNC('month',created_at) ORDER BY DATE_TRUNC('month',created_at) DESC LIMIT 6`,[req.user.id]);
+  const months=await pool.query(`SELECT TO_CHAR(DATE_TRUNC('month',created_at),'Mon YYYY') AS "month",COUNT(*)::int uploads,COALESCE(SUM(views),0)::int views FROM videos WHERE user_id=$1 GROUP BY 1,DATE_TRUNC('month',created_at) ORDER BY DATE_TRUNC('month',created_at) DESC LIMIT 6`,[req.user.id]);
   res.json({channel:profile.rows[0],stats:stats.rows[0],topVideos:top.rows,monthlyViews:months.rows.reverse(),monetization:{enabled:false,balance:0}})
  }catch(e){res.status(500).json({message:e.message})}
 });
