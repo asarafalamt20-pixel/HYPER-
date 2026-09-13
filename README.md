@@ -72,3 +72,7 @@ The Admin 30% shown by HYPER is an accounting/ledger share. The actual cash sett
 
 ## Same-email HYPER Admin
 Set `HYPER_ADMIN_EMAIL` to the exact email used for the HYPER account. That HYPER login becomes the Admin login; no separate Admin email/password is needed. The Admin page is `/admin`. Do not expose admin credentials or API secrets in frontend code.
+
+
+## Admin menu visibility
+The HYPER Admin option is shown inside Account & Channel only for the configured Admin email (`asarafalamt20@gmail.com`) or a server-marked `is_admin` account. Other users do not see the Admin option, and server-side admin authorization still protects `/api/admin/*`.
