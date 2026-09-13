@@ -24,8 +24,9 @@ const demo=[
 async function db(){
  if(!pool)return;
  await pool.query(`CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY,username VARCHAR(50) UNIQUE NOT NULL,email VARCHAR(160) UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name VARCHAR(100) NOT NULL,full_name VARCHAR(100),channel_name VARCHAR(100),channel_description TEXT DEFAULT '',created_at TIMESTAMPTZ DEFAULT NOW(),avatar_url TEXT DEFAULT NULL);
- CREATE TABLE IF NOT EXISTS videos(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,title VARCHAR(200) NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT,type VARCHAR(20) DEFAULT 'video',category VARCHAR(30) DEFAULT 'Vlog',views INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW(),upload_key TEXT UNIQUE);
+ CREATE TABLE IF NOT EXISTS videos(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,title VARCHAR(200) NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT,type VARCHAR(20) DEFAULT 'video',category VARCHAR(30) DEFAULT 'Vlog',views INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW(),upload_key TEXT UNIQUE,duration_seconds INTEGER DEFAULT 0);
  ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100); ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_name VARCHAR(100); ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_description TEXT DEFAULT ''; UPDATE users SET full_name=COALESCE(full_name,display_name),channel_name=COALESCE(channel_name,display_name) WHERE full_name IS NULL OR channel_name IS NULL; ALTER TABLE videos ADD COLUMN IF NOT EXISTS category VARCHAR(30) DEFAULT 'Vlog'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS upload_key TEXT; CREATE UNIQUE INDEX IF NOT EXISTS videos_upload_key_uidx ON videos(upload_key) WHERE upload_key IS NOT NULL; CREATE TABLE IF NOT EXISTS subscriptions(subscriber_id INTEGER REFERENCES users(id) ON DELETE CASCADE,channel_id INTEGER REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(subscriber_id,channel_id));
+ ALTER TABLE videos ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0;
  CREATE TABLE IF NOT EXISTS comments(id SERIAL PRIMARY KEY,video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,text TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
  CREATE TABLE IF NOT EXISTS watch_history(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,watched_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
  CREATE TABLE IF NOT EXISTS liked_videos(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,liked_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
@@ -120,6 +121,7 @@ app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thum
  if(!vf)return res.status(400).json({message:'Video required'});
  const allowed=['Discover','Popular','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'];
  const cat=allowed.includes(req.body.category)?req.body.category:'Discover';
+ const durationSeconds=Math.max(0,Math.round(Number(req.body.duration_seconds||0)));
  try{let v='/uploads/'+vf.filename,t=req.files.thumbnail?.[0]?'/uploads/'+req.files.thumbnail[0].filename:null;
  const uploadKey=String(req.body.upload_id||'').trim()||null;
  if(uploadKey){const existing=await pool.query('SELECT * FROM videos WHERE upload_key=$1 LIMIT 1',[uploadKey]);if(existing.rows[0]){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}return res.status(200).json(existing.rows[0])}}
@@ -127,7 +129,7 @@ app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thum
    const vk=storageKey(req.user.id,vf.originalname); v=await uploadPermanent(path.join(dir,vf.filename),vk,vf.mimetype);
    let thumb=req.files.thumbnail?.[0]; if(thumb){const tk=storageKey(req.user.id,thumb.originalname);t=await uploadPermanent(path.join(dir,thumb.filename),tk,thumb.mimetype)}
  }
- let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[req.user.id,String(req.body.title||'Untitled').slice(0,200),req.body.description||'',v,t,req.body.type==='short'?'short':'video',cat,uploadKey]);
+ let q=await pool.query('INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key,duration_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',[req.user.id,String(req.body.title||'Untitled').slice(0,200),req.body.description||'',v,t,req.body.type==='short'?'short':'video',cat,uploadKey,durationSeconds]);
  if(storageConfigured){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}}
  res.status(201).json(q.rows[0])}
  catch(e){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}console.error('Publish error:',e);res.status(500).json({message:storageConfigured?'Permanent storage upload failed. Please try again.':'Publish failed. Please try again.'})}
