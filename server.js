@@ -65,7 +65,7 @@ app.get('/api/studio/overview',auth,async(req,res)=>{
    pool.query(`SELECT username,display_name,COALESCE(channel_name,display_name) channel_name,COALESCE(channel_description,'') channel_description,avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM users u WHERE u.id=$1`,[req.user.id]),
    pool.query(`SELECT COUNT(*)::int uploads,COUNT(*) FILTER(WHERE type='video')::int videos,COUNT(*) FILTER(WHERE type='short')::int shorts,COALESCE(SUM(views),0)::int views,COALESCE(SUM(likes),0)::int likes FROM videos WHERE user_id=$1`,[req.user.id]),
    pool.query(`SELECT id,title,views,likes,type,category,thumbnail_url,created_at FROM videos WHERE user_id=$1 ORDER BY views DESC,created_at DESC LIMIT 10`,[req.user.id]),
-   pool.query(`SELECT TO_CHAR(DATE_TRUNC('month',created_at),'Mon YYYY') month,COALESCE(SUM(views),0)::int views FROM videos WHERE user_id=$1 GROUP BY DATE_TRUNC('month',created_at) ORDER BY DATE_TRUNC('month',created_at) DESC LIMIT 6`,[req.user.id]),
+   pool.query(`SELECT TO_CHAR(DATE_TRUNC('month',created_at),'Mon YYYY') AS "month",COALESCE(SUM(views),0)::int views FROM videos WHERE user_id=$1 GROUP BY DATE_TRUNC('month',created_at) ORDER BY DATE_TRUNC('month',created_at) DESC LIMIT 6`,[req.user.id]),
    pool.query(`SELECT enabled,creator_share_bps,balance_paise,lifetime_earned_paise,paid_out_paise FROM creator_wallets WHERE user_id=$1`,[req.user.id]),
    pool.query(`SELECT COALESCE(SUM(gross_paise),0)::bigint gross_paise,COALESCE(SUM(creator_paise),0)::bigint creator_paise,COALESCE(SUM(impressions),0)::bigint impressions FROM ad_revenue_ledger WHERE user_id=$1`,[req.user.id])
   ]);
