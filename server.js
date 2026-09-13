@@ -92,17 +92,21 @@ app.get('/api/videos',async(req,res)=>{
  if(!pool){
   let list=demo.slice();
   if(type)list=list.filter(x=>x.type===type);
-  if(category&&category!=='All')list=list.filter(x=>(x.category||'Discover').toLowerCase()===category.toLowerCase());
+  if(category==='Popular') list=list.filter(x=>x.type!=='short').sort((a,b)=>(Number(b.views||0)+Number(b.likes||0)*25)-(Number(a.views||0)+Number(a.likes||0)*25));
+  else if(category&&category!=='All')list=list.filter(x=>(x.category||'Discover').toLowerCase()===category.toLowerCase());
   return res.json(list);
  }
  try{
   const params=[]; const where=[];
   if(type){params.push(type);where.push(`v.type=$${params.length}`)}
-  if(category&&category!=='All'){params.push(category);where.push(`LOWER(v.category)=LOWER($${params.length})`)}
-  const privacyClause='u.is_private IS NOT TRUE'; where.push(privacyClause); const q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.channel_name,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id WHERE ${where.join(' AND ')} ORDER BY v.created_at DESC`,params);
+  if(category&&category!=='All'&&category!=='Popular'){params.push(category);where.push(`LOWER(v.category)=LOWER($${params.length})`)}
+  const privacyClause='u.is_private IS NOT TRUE'; where.push(privacyClause);
+  const order=category==='Popular' ? 'ORDER BY ((v.views::numeric)+(v.likes::numeric*25)) DESC, v.created_at DESC' : 'ORDER BY v.created_at DESC';
+  const q=await pool.query(`SELECT v.*,u.username,u.display_name channel,u.channel_name,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id WHERE ${where.join(' AND ')} ${order}`,params);
   res.json(q.rows);
  }catch(e){res.status(500).json({message:e.message})}
 });
+
 app.get('/api/videos/:id',async(req,res)=>{
  if(!pool){let v=demo.find(x=>String(x.id)===req.params.id);return v?res.json(v):res.status(404).json({message:'Not found'})}
  try{let q=await pool.query('SELECT v.*,u.username,u.display_name channel,u.avatar_url,(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id=u.id)::int subscriber_count FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1',[req.params.id]);if(!q.rows[0])return res.status(404).json({message:'Not found'});await pool.query('UPDATE videos SET views=views+1 WHERE id=$1',[req.params.id]);res.json(q.rows[0])}
