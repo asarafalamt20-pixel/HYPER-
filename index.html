@@ -275,7 +275,7 @@ async function deleteVideo(id){if(!user)return auth();if(!confirm('Is video ko p
 let activeUploadXhrs=new Map(), uploadAbortControllers=new Map(), uploadRunning=new Set();
 function formatTransferRate(bytesPerSec){if(!isFinite(bytesPerSec)||bytesPerSec<=0)return '';if(bytesPerSec>=1048576)return (bytesPerSec/1048576).toFixed(1)+' MB/s';return Math.max(1,Math.round(bytesPerSec/1024))+' KB/s'}
 function openUploadDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('hyper-upload-queue',4);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('tasks'))db.createObjectStore('tasks',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
-async function queueBackgroundUpload(task){const db=await openUploadDB();const record={...task,fileBlob:task.file||task.fileBlob||null,thumbnailBlob:task.thumbnail||task.thumbnailBlob||null,state:task.state||'waiting'};delete record.file;delete record.thumbnail;await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
+async function queueBackgroundUpload(task){const db=await openUploadDB();const record={...task,fileBlob:task.file||task.fileBlob||null,thumbnailBlob:task.thumbnail||task.thumbnailBlob||null,state:task.state||'waiting',chunk_size:Number(task.chunk_size)||8*1024*1024,progress:Number(task.progress)||0};delete record.file;delete record.thumbnail;await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
 async function updateUploadRecord(id,patch={}){try{const db=await openUploadDB();await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite'),st=tx.objectStore('tasks'),r=st.get(id);r.onsuccess=()=>{const x=r.result;if(!x)return resolve();st.put({...x,...patch});};r.onerror=()=>reject(r.error);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){}}
 function removeBackgroundUpload(id){openUploadDB().then(db=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').delete(id);tx.oncomplete=()=>db.close()}).catch(()=>{})}
 async function registerBackgroundSync(){try{let reg=await navigator.serviceWorker?.ready;if(reg?.sync?.register)await reg.sync.register('hyper-upload');return true}catch(e){return false}}
@@ -288,7 +288,7 @@ function uploadChunkWithProgress(url,headers,fd,onProgress){
   xhr.onload=()=>{cleanup();let data={};try{data=JSON.parse(xhr.responseText||'{}')}catch{}if(xhr.status>=200&&xhr.status<300)resolve(data);else reject(new Error(data.message||'Chunk upload failed ('+xhr.status+')'))};
   xhr.onerror=()=>{cleanup();reject(new Error('Network error during upload'))};
   xhr.onabort=()=>{cleanup();reject(new Error('Upload aborted'))};
-  const key=String(Date.now())+'-'+Math.random();activeUploadXhrs.set(key,xhr);xhr.send(fd)
+  const key=String(Date.now())+'-'+Math.random();activeUploadXhrs.set(key,xhr);xhr.__hyperUploadKey=key;xhr.send(fd)
  })
 }
 async function uploadQueuedTask(q){
@@ -299,23 +299,35 @@ async function uploadQueuedTask(q){
  if(!file||typeof file.slice!=='function'){t.status='error';t.message='Upload file not found. Please select the Video again.';persistUploadTasks();renderUploadDock();return}
  q.file=file;
  uploadRunning.add(String(q.id));
- const CHUNK=8*1024*1024, total=Math.ceil(file.size/CHUNK), concurrency=4;
+ const CHUNK=Number(q.chunk_size)||1024*1024, total=Math.ceil(file.size/CHUNK), concurrency=4;
  try{
   t.status='uploading';t.background=true;t.message='Checking upload progress…';persistUploadTasks();renderUploadDock();
   const token=safeGet('hyper_token',''),headers=token?{Authorization:'Bearer '+token}:{};
   const base=A+'/uploads/'+encodeURIComponent(q.upload_id||q.id);
   const st=await fetch(base+'/status',{headers,cache:'no-store'});if(!st.ok)throw new Error('Upload session unavailable ('+st.status+')');
   const sd=await st.json();if(sd.complete){t.status='done';t.progress=100;t.message='Published successfully';removeBackgroundUpload(q.id);persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(q.id),1800);return}
-  const received=new Set(sd.received||[]), pending=[];
+  const received=new Set((sd.received||[]).map(Number)), pending=[];
   for(let i=0;i<total;i++)if(!received.has(i))pending.push(i);
   const loadedMap={};
-  for(let i=0;i<total;i++)if(received.has(i))loadedMap[i]=Math.min(CHUNK,file.size-i*CHUNK);
+  for(let i=0;i<total;i++)if(received.has(i))loadedMap[i]=Math.min(CHUNK,Math.max(0,file.size-i*CHUNK));
+  const receivedBytes=Object.values(loadedMap).reduce((a,b)=>a+b,0);
+  t.progress=Math.min(95,Math.floor((file.size?receivedBytes/file.size:0)*95));
+  t._speedBytes=receivedBytes; t._speedStamp=Date.now();
+  t.message=receivedBytes?`Resuming… ${t.progress}% already uploaded`:'Starting upload…';
+  persistUploadTasks();renderUploadDock();
   const updateProgress=()=>{
-   let loaded=0;for(const n of Object.keys(loadedMap))loaded+=loadedMap[n]||0;
-   const frac=file.size?loaded/file.size:0;
+   let committed=0,inFlight=0;
+   for(let i=0;i<total;i++){
+    if(received.has(i)) committed+=Math.min(CHUNK,Math.max(0,file.size-i*CHUNK));
+    else inFlight+=Math.min(CHUNK,Math.max(0,loadedMap[i]||0));
+   }
+   // Only committed chunks determine the persisted percentage. Partial chunks are shown
+   // as transfer activity but are not counted in the durable % so refresh can never roll
+   // the displayed percentage back from an uncommitted chunk.
+   const frac=file.size?committed/file.size:0;
    t.progress=Math.min(95,Math.floor(frac*95));
-   const now=Date.now(),prev=t._speedStamp||now,delta=Math.max(1,(now-prev)/1000),bytesNow=loaded-(t._speedBytes||0);
-   if(bytesNow>0){const inst=bytesNow/delta;t._speed=t._speed?(.7*t._speed+.3*inst):inst;t._speedBytes=loaded;t._speedStamp=now}
+   const now=Date.now(),prev=t._speedStamp||now,delta=Math.max(0.2,(now-prev)/1000),bytesNow=(committed+inFlight)-(t._speedBytes||0);
+   if(bytesNow>0){const inst=bytesNow/delta;t._speed=t._speed?(.7*t._speed+.3*inst):inst;t._speedBytes=committed+inFlight;t._speedStamp=now}
    const speed=t._speed>0?formatTransferRate(t._speed):'';
    t.message=speed?`Uploading… ${t.progress}% • ${speed}`:`Uploading… ${t.progress}%`;
    persistUploadTasks();renderUploadDock();
@@ -333,7 +345,7 @@ async function uploadQueuedTask(q){
       const fd=new FormData();fd.append('chunk',slice,q.filename||file.name);fd.append('chunk_index',String(i));fd.append('total_chunks',String(total));
       loadedMap[i]=0;updateProgress();
       await uploadChunkWithProgress(base+'/chunk',headers,fd,(loaded,totalBytes)=>{loadedMap[i]=loaded;updateProgress()});
-      loadedMap[i]=slice.size;updateProgress();break;
+      loadedMap[i]=slice.size;received.add(i);updateProgress();break;
      }catch(e){attempt++;if(attempt>=3)throw e;await new Promise(r=>setTimeout(r,700*attempt));}
     }
    }
@@ -390,13 +402,14 @@ async function startUpload(){
    }catch(e){}
  }
  if(existing){persistUploadTasks();renderUploadDock();return resumeUpload(existing.id)}
- let task={id,title,upload_id:String(id),progress:0,status:'uploading',message:'Upload queued…',_live:false,background:true,size:f.size,fingerprint};uploadTasks.push(task);persistUploadTasks();renderUploadDock();
- try{await queueBackgroundUpload({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}',state:'waiting'});uploadQueuedTask({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}'})}catch(e){task.status='error';task.message=e.message;persistUploadTasks();renderUploadDock()}
+ let task={id,title,upload_id:String(id),progress:0,status:'uploading',message:'Upload queued…',_live:false,background:true,size:f.size,fingerprint,chunk_size:1024*1024};uploadTasks.push(task);persistUploadTasks();renderUploadDock();
+ try{await queueBackgroundUpload({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}',state:'waiting'});uploadQueuedTask({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}'})}catch(e){task.status='error';task.message=e.message;persistUploadTasks();renderUploadDock()}
  setTimeout(()=>{['title','desc','video','thumb'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});setType('video');const catEl=document.getElementById('cat');if(catEl)catEl.value='Discover'},0)
 }
 function upload(){startUpload()}
 function stopUploadsForBackground(){for(const xhr of activeUploadXhrs.values()){try{xhr.abort()}catch(e){}}}
-window.addEventListener('pagehide',()=>{persistUploadTasks();registerBackgroundSync()});
+window.addEventListener('pagehide',()=>{for(const t of uploadTasks){if(t.status==='uploading'){t.status='paused';t.message=`Upload paused at ${t.progress||0}% — resume after refresh`;updateUploadRecord(t.id,{progress:Number(t.progress)||0,state:'paused'}).catch(()=>{})}}persistUploadTasks();registerBackgroundSync()});
+window.addEventListener('beforeunload',()=>{persistUploadTasks()});
 
 const LANGUAGE_NAMES={auto:'Auto',hi:'हिन्दी',en:'English',bho:'भोजपुरी',bn:'বাংলা',mr:'मराठी',gu:'ગુજરાતી',ta:'தமிழ்',te:'తెలుగు',kn:'ಕನ್ನಡ',ml:'മലയാളം',pa:'ਪੰਜਾਬੀ',ur:'اردو',other:'Other'};
 function languageName(k){return LANGUAGE_NAMES[k]||'English'}
