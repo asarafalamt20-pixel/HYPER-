@@ -5,7 +5,7 @@ const app=express(),PORT=process.env.PORT||10000,SECRET=process.env.JWT_SECRET||
 const cloudinaryConfigured=!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET);
 if(process.env.CLOUDINARY_CLOUD_NAME){cloudinary.config({cloud_name:process.env.CLOUDINARY_CLOUD_NAME,api_key:process.env.CLOUDINARY_API_KEY||'',api_secret:process.env.CLOUDINARY_API_SECRET||'',secure:true})}
 app.use(cors());app.use(express.json());
-app.get('/api/health',(req,res)=>res.json({ok:true,service:'HYPER',version:'2.3.6',cloudinaryConfigured:!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET),databaseConfigured:!!process.env.DATABASE_URL}));
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'HYPER',version:'2.3.9',cloudinaryConfigured:!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET),databaseConfigured:!!process.env.DATABASE_URL}));
 // Always fetch fresh feed/API data so newly published videos appear for every user/device.
 app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');next()});
 const defaultUploadDir=fs.existsSync('/var/data')?path.join('/var/data','hyper-uploads'):path.join(__dirname,'uploads');
@@ -305,7 +305,9 @@ app.get('/api/ads/config',async(req,res)=>{
  const testTag='https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=';
  const real=String(process.env.HYPER_VAST_AD_TAG_URL||'').trim();
  const enabled=String(process.env.HYPER_ADS_ENABLED||'true').toLowerCase()==='true';
- const useTest=String(process.env.HYPER_ADS_TEST||'true').toLowerCase()==='true';
+ const useTest=String(process.env.HYPER_ADS_TEST||'false').toLowerCase()==='true';
+ // Production uses an approved Google Ad Manager/VAST tag supplied by HYPER.
+ // Never silently label Google's sample ad as real revenue.
  res.json({enabled:enabled && !!(real||useTest),test:!real&&useTest,ad_tag_url:real||testTag});
 });
 app.post('/api/ads/event',async(req,res)=>{

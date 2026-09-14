@@ -3,6 +3,7 @@
 This version keeps the existing HYPER UI/model and adds a production-oriented monetization ledger and payout layer.
 
 ## What is real now
+- Video ads use Google IMA/VAST in production when `HYPER_VAST_AD_TAG_URL` is set. The Google sample tag is disabled by default (`HYPER_ADS_TEST=false`).
 - Creator wallet with balance, lifetime earnings and paid-out totals.
 - Fixed revenue split: Creator 70% / HYPER Admin 30%.
 - Verified ad-revenue ledger with provider/event IDs to prevent duplicate crediting.
@@ -136,3 +137,13 @@ After verified revenue is settled into HYPER Studio, creators can see balance/ea
 
 
 HYPER v2.3.2: AWS/S3 dependency removed. Use Cloudinary for permanent video uploads and Render for the Node backend.
+
+
+## Video ads and replay
+- A production VAST ad tag is required for real advertiser ads. Set `HYPER_VAST_AD_TAG_URL` to the approved tag from your ad provider/Google Ad Manager.
+- `HYPER_ADS_TEST=false` is the default so the app does not mistake Google's sample ad for real monetization.
+- A fresh ad opportunity is requested when a viewer starts a video again from the beginning. Pause/resume in the middle does not trigger another ad.
+
+## Faster uploads
+- Cloudinary uploads use 20 MiB resumable chunks instead of 4 MiB, reducing HTTP round-trips on large videos.
+- Failed chunks retry automatically and uploads can resume from the last committed chunk.
