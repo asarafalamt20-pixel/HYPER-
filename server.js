@@ -203,7 +203,7 @@ app.post('/api/uploads/:uploadId/chunk',auth,chunkUpload.single('chunk'),async(r
  try{
   const uploadId=String(req.params.uploadId), id=uploadId.replace(/[^a-zA-Z0-9_-]/g,'_'),d=path.join(dir,'.hyper-chunks',String(req.user.id),id);
   if(!req.file)return res.status(400).json({message:'Chunk required'});
-  const n=Number(req.body.chunk_index); if(!Number.isInteger(n)||n<0)return res.status(400).json({message:'Invalid chunk index'});
+  const n=Number(req.body.chunk_index ?? req.query.chunk_index); if(!Number.isInteger(n)||n<0)return res.status(400).json({message:'Invalid chunk index'});
   const target=path.join(d,'chunk-'+n+'.part');
   fs.mkdirSync(d,{recursive:true});
   if(path.resolve(req.file.path)!==path.resolve(target)){fs.renameSync(req.file.path,target)}

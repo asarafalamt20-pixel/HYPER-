@@ -312,6 +312,7 @@ async function uploadQueuedTask(q){
   for(let i=0;i<total;i++)if(received.has(i))loadedMap[i]=Math.min(CHUNK,Math.max(0,file.size-i*CHUNK));
   const receivedBytes=Object.values(loadedMap).reduce((a,b)=>a+b,0);
   t.progress=Math.min(95,Math.floor((file.size?receivedBytes/file.size:0)*95));
+  t.committedProgress=t.progress;
   t._speedBytes=receivedBytes; t._speedStamp=Date.now();
   t.message=receivedBytes?`Resuming… ${t.progress}% already uploaded`:'Starting upload…';
   persistUploadTasks();renderUploadDock();
@@ -324,14 +325,18 @@ async function uploadQueuedTask(q){
    // Only committed chunks determine the persisted percentage. Partial chunks are shown
    // as transfer activity but are not counted in the durable % so refresh can never roll
    // the displayed percentage back from an uncommitted chunk.
-   const frac=file.size?committed/file.size:0;
-   t.progress=Math.min(95,Math.floor(frac*95));
+   // Display live transfer progress, but keep a separate durable checkpoint.
+   // The durable checkpoint only advances after a whole chunk is confirmed by the server.
+   const durableFrac=file.size?committed/file.size:0;
+   const liveFrac=file.size?(committed+inFlight)/file.size:0;
+   t.committedProgress=Math.min(95,Math.floor(durableFrac*95));
+   t.progress=Math.min(95,Math.floor(liveFrac*95));
    const now=Date.now(),prev=t._speedStamp||now,delta=Math.max(0.2,(now-prev)/1000),bytesNow=(committed+inFlight)-(t._speedBytes||0);
    if(bytesNow>0){const inst=bytesNow/delta;t._speed=t._speed?(.7*t._speed+.3*inst):inst;t._speedBytes=committed+inFlight;t._speedStamp=now}
    const speed=t._speed>0?formatTransferRate(t._speed):'';
    t.message=speed?`Uploading… ${t.progress}% • ${speed}`:`Uploading… ${t.progress}%`;
    persistUploadTasks();renderUploadDock();
-   if(!t._dbStamp||Date.now()-t._dbStamp>900){t._dbStamp=Date.now();updateUploadRecord(q.id,{progress:t.progress,state:'uploading',size:file.size,filename:q.filename||file.name,mimetype:file.type||'video/mp4'});}
+   if(!t._dbStamp||Date.now()-t._dbStamp>900){t._dbStamp=Date.now();updateUploadRecord(q.id,{progress:Number(t.committedProgress||0),committed_progress:Number(t.committedProgress||0),state:'uploading',size:file.size,filename:q.filename||file.name,mimetype:file.type||'video/mp4'});}
   };
   let cursor=0;
   async function worker(){
@@ -345,7 +350,10 @@ async function uploadQueuedTask(q){
       const fd=new FormData();fd.append('upload_id',String(q.upload_id||q.id));fd.append('chunk',slice,q.filename||file.name);fd.append('chunk_index',String(i));fd.append('total_chunks',String(total));
       loadedMap[i]=0;updateProgress();
       await uploadChunkWithProgress(base+'/chunk',headers,fd,(loaded,totalBytes)=>{loadedMap[i]=loaded;updateProgress()});
-      loadedMap[i]=slice.size;received.add(i);updateProgress();break;
+      loadedMap[i]=slice.size;received.add(i);updateProgress();
+      t.committedProgress=t.progress;
+      await updateUploadRecord(q.id,{progress:Number(t.progress)||0,committed_progress:Number(t.progress)||0,state:'uploading',size:file.size,filename:q.filename||file.name,mimetype:file.type||'video/mp4'}).catch(()=>{});
+      break;
      }catch(e){attempt++;if(attempt>=3)throw e;await new Promise(r=>setTimeout(r,700*attempt));}
     }
    }
@@ -355,7 +363,7 @@ async function uploadQueuedTask(q){
   const fd=new FormData();fd.append('title',q.title||'Untitled');fd.append('description',q.description||'');fd.append('type',q.type||'video');fd.append('category',q.category||'Discover');fd.append('upload_id',String(q.upload_id||q.id));fd.append('duration_seconds',String(q.duration_seconds||0));fd.append('total_chunks',String(total));fd.append('filename',q.filename||file.name);fd.append('mimetype',file.type||'video/mp4');fd.append('original_language',q.original_language||'auto');fd.append('language_tracks',q.language_tracks||'{}');fd.append('subtitle_tracks',q.subtitle_tracks||'{}');const thumb=q.thumbnail||q.thumbnailBlob;if(thumb)fd.append('thumbnail',thumb,q.thumbnailName||thumb.name||'thumbnail.jpg');
   const r=await fetch(base+'/complete',{method:'POST',headers,body:fd});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.message||'Publish failed');
   removeBackgroundUpload(q.id);t.status='done';t.progress=100;t.message='Published successfully';t._live=false;t.background=false;persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(q.id),1800);await loadFeedOnly();
- }catch(e){t.status='paused';t._live=false;t.background=true;t.message='Upload paused — tap Resume or refresh to continue';persistUploadTasks();renderUploadDock();registerBackgroundSync()}
+ }catch(e){t.status='paused';t._live=false;t.background=true;t.message='Upload paused: '+(e?.message||'network error')+' — tap Resume';persistUploadTasks();renderUploadDock();registerBackgroundSync()}
  finally{uploadRunning.delete(String(q.id))}
 }
 async function resumeUpload(id){try{const db=await openUploadDB();const q=await new Promise((resolve,reject)=>{const r=db.transaction('tasks','readonly').objectStore('tasks').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});db.close();if(q)uploadQueuedTask(q);else{const t=uploadTasks.find(x=>String(x.id)===String(id));if(t){t.status='error';t.message='Upload file not found. Please select the video again.';persistUploadTasks();renderUploadDock()}}}catch(e){alert(e.message)}}
@@ -373,7 +381,7 @@ async function reconcileUploadQueue(){
   persistUploadTasks();renderUploadDock()
  }catch(e){console.warn('Upload queue resume failed',e)}
 }
-async function removeUploadTask(id){const target=uploadTasks.find(x=>String(x.id)===String(id));const fp=target?.fingerprint||'';for(const [k,xhr] of activeUploadXhrs){try{if(String(k).includes(String(id)))xhr.abort()}catch(e){}}uploadRunning.delete(String(id));try{const db=await openUploadDB();await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite'),st=tx.objectStore('tasks'),r=st.getAll();r.onsuccess=()=>{for(const x of (r.result||[])){if(String(x.id)===String(id)||(fp&&x.fingerprint===fp))st.delete(x.id)} };r.onerror=()=>reject(r.error);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){}removeBackgroundUpload(id);uploadTasks=uploadTasks.filter(x=>String(x.id)!==String(id)&&!(fp&&x.fingerprint===fp));persistUploadTasks();renderUploadDock()}
+async function removeUploadTask(id){const target=uploadTasks.find(x=>String(x.id)===String(id));const fp=target?.fingerprint||'';try{const tomb=safeJSON(safeGet('hyper_deleted_uploads','[]'),[]);tomb.push({id:String(id),fingerprint:fp,at:Date.now()});safeSet('hyper_deleted_uploads',JSON.stringify(tomb.slice(-50)))}catch(e){}for(const [k,xhr] of activeUploadXhrs){try{if(String(k).includes(String(id)))xhr.abort()}catch(e){}}uploadRunning.delete(String(id));try{const db=await openUploadDB();await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite'),st=tx.objectStore('tasks'),r=st.getAll();r.onsuccess=()=>{for(const x of (r.result||[])){if(String(x.id)===String(id)||(fp&&x.fingerprint===fp))st.delete(x.id)} };r.onerror=()=>reject(r.error);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){}removeBackgroundUpload(id);uploadTasks=uploadTasks.filter(x=>String(x.id)!==String(id)&&!(fp&&x.fingerprint===fp));persistUploadTasks();renderUploadDock()}
 function renderUploadDock(){
  let el=document.getElementById('uploadDock');if(!el)return;
  uploadTasks=uploadTasks.filter(x=>x.status!=='done'||x.keepDone);
@@ -387,23 +395,29 @@ function renderUploadDock(){
  el.innerHTML=uploadTasks.filter(x=>['uploading','done','error','paused'].includes(x.status)).slice(-5).map(x=>`<div class="uploadTask"><div class="utop"><b>${escapeHtml(x.title)}</b><span>${x.status==='uploading'?(x.progress||0)+'%':x.status==='paused'?'Paused — '+(x.progress||0)+'%':x.status==='error'?'Error':'Done'}</span></div><progress max="100" value="${x.progress||0}"></progress><small class="muted">${escapeHtml(x.message||'')}</small>${x.status==='paused'||x.status==='error'?`<button class="listbtn" style="margin-top:7px;border:1px solid var(--line);border-radius:10px" onclick="event.stopPropagation();resumeUpload('${x.id}')">↻ Resume Upload</button>`:''}<button class="listbtn" style="margin-top:7px;border:1px solid var(--line);border-radius:10px" onclick="event.stopPropagation();removeUploadTask('${x.id}')">🗑️ Delete</button></div>`).join('')
 }
 async function startUpload(){
- if(!user)return auth();let f=document.getElementById('video')?.files?.[0];if(!f)return alert('Select a video');if(f.size>250*1024*1024)return alert('Video must be 250 MB or smaller');
- let durationSeconds=await getDurationFromVideoFile(f),title=(document.getElementById('title')?.value||'Untitled').trim(),desc=document.getElementById('desc')?.value||'',type=uploadType==='short'?'short':'video',cat=document.getElementById('cat')?.value||'Discover',lang=document.getElementById('videoLanguage')?.value||settingsState.language||'auto',t=document.getElementById('thumb')?.files?.[0],id=Date.now()+Math.random();
- const fingerprint=(f.name||'')+'|'+f.size+'|'+(f.lastModified||0);
- let existing=uploadTasks.find(x=>x.fingerprint===fingerprint&&x.status!=='done');
- if(!existing){
-   try{
-    const db=await openUploadDB();
-    const queued=await new Promise((resolve,reject)=>{const r=db.transaction('tasks','readonly').objectStore('tasks').getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error)});
-    db.close();
-    const hit=queued.find(x=>x.fingerprint===fingerprint&&x.state!=='done');
-    if(hit)existing=uploadTasks.find(x=>String(x.id)===String(hit.id))||{id:hit.id,upload_id:hit.upload_id||hit.id,title:hit.title||title,progress:Number(hit.progress)||0,status:'paused',message:'Upload already queued — resuming…',background:true,size:f.size,fingerprint};
-    if(existing&&!uploadTasks.some(x=>String(x.id)===String(existing.id)))uploadTasks.push(existing);
-   }catch(e){}
- }
+ if(!user)return auth();
+ let f=document.getElementById('video')?.files?.[0];
+ if(!f)return alert('Select a video');
+ if(f.size>250*1024*1024)return alert('Video must be 250 MB or smaller');
+ let durationSeconds=await getDurationFromVideoFile(f),title=(document.getElementById('title')?.value||'Untitled').trim(),desc=document.getElementById('desc')?.value||'',type=uploadType==='short'?'short':'video',cat=document.getElementById('cat')?.value||'Discover',lang=document.getElementById('videoLanguage')?.value||settingsState.language||'auto',t=document.getElementById('thumb')?.files?.[0],fingerprint=(f.name||'')+'|'+f.size+'|'+(f.lastModified||0),id=Date.now()+Math.random();
+ // A fresh Start Upload after Delete must never inherit an old paused/error session.
+ let existing=uploadTasks.find(x=>x.fingerprint===fingerprint&&['uploading','waiting'].includes(x.status));
+ try{
+   const db=await openUploadDB();
+   const queued=await new Promise((resolve,reject)=>{const r=db.transaction('tasks','readonly').objectStore('tasks').getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error)});
+   db.close();
+   const active=queued.find(x=>x.fingerprint===fingerprint&&['waiting','uploading'].includes(x.state));
+   if(!existing && active){existing=uploadTasks.find(x=>String(x.id)===String(active.id))||{id:active.id,upload_id:active.upload_id||active.id,title:active.title||title,progress:Number(active.progress)||0,status:'paused',message:'Upload already running — resuming…',background:true,size:f.size,fingerprint};if(!uploadTasks.some(x=>String(x.id)===String(existing.id)))uploadTasks.push(existing)}
+   // Remove stale paused/error records for this same file so re-upload starts from a new session.
+   for(const x of queued){if(x.fingerprint===fingerprint&&x!==active&&!['waiting','uploading'].includes(x.state)){try{await fetch(A+'/uploads/'+encodeURIComponent(x.upload_id||x.id),{method:'DELETE',headers:safeGet('hyper_token','')?{Authorization:'Bearer '+safeGet('hyper_token','')}:{}})}catch(e){};try{await new Promise((resolve,reject)=>{const tx2=db.transaction('tasks','readwrite');tx2.objectStore('tasks').delete(x.id);tx2.oncomplete=resolve;tx2.onerror=()=>reject(tx2.error)})}catch(e){}}
+   }
+ }catch(e){}
  if(existing){persistUploadTasks();renderUploadDock();return resumeUpload(existing.id)}
- let task={id,title,upload_id:String(id),progress:0,status:'uploading',message:'Upload queued…',_live:false,background:true,size:f.size,fingerprint,chunk_size:1024*1024};uploadTasks.push(task);persistUploadTasks();renderUploadDock();
- try{await queueBackgroundUpload({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}',state:'waiting'});uploadQueuedTask({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}'})}catch(e){task.status='error';task.message=e.message;persistUploadTasks();renderUploadDock()}
+ // Clear stale local task cards for the same file before creating a new task.
+ uploadTasks=uploadTasks.filter(x=>!(x.fingerprint===fingerprint&&['paused','error'].includes(x.status)));
+ let task={id,title,upload_id:String(id),progress:0,committedProgress:0,status:'uploading',message:'Starting upload…',_live:false,background:true,size:f.size,fingerprint,chunk_size:1024*1024};
+ uploadTasks.push(task);persistUploadTasks();renderUploadDock();
+ try{await queueBackgroundUpload({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}',state:'waiting'});uploadQueuedTask({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}'})}catch(e){task.status='error';task.message='Upload start failed: '+e.message;persistUploadTasks();renderUploadDock()}
  setTimeout(()=>{['title','desc','video','thumb'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});setType('video');const catEl=document.getElementById('cat');if(catEl)catEl.value='Discover'},0)
 }
 function upload(){startUpload()}
