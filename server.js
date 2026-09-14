@@ -199,6 +199,15 @@ app.get('/api/uploads/:uploadId/status',auth,async(req,res)=>{
  }catch(e){res.status(500).json({message:e.message})}
 });
 
+app.delete('/api/uploads/:uploadId',auth,async(req,res)=>{
+ try{
+  const id=String(req.params.uploadId).replace(/[^a-zA-Z0-9_-]/g,'_');
+  const d=path.join(dir,'.hyper-chunks',String(req.user.id),id);
+  fs.rmSync(d,{recursive:true,force:true});
+  res.json({deleted:true});
+ }catch(e){res.status(500).json({message:e.message||'Could not delete upload session'})}
+});
+
 app.post('/api/uploads/:uploadId/chunk',auth,chunkUpload.single('chunk'),async(req,res)=>{
  try{
   const uploadId=String(req.params.uploadId), id=uploadId.replace(/[^a-zA-Z0-9_-]/g,'_'),d=path.join(dir,'.hyper-chunks',String(req.user.id),id);

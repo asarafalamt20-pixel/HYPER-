@@ -14,6 +14,10 @@ services:
         generateValue: true
       - key: NODE_ENV
         value: production
+    disk:
+      name: hyper-media
+      mountPath: /var/data
+      sizeGB: 10
 databases:
   - name: hyper-db
     plan: free

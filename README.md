@@ -101,3 +101,9 @@ The HYPER Admin option is shown inside Account & Channel only for the configured
 - Delete removes matching upload task(s) from IndexedDB and stops active upload requests.
 - Duplicate upload tasks are merged by fingerprint.
 - Expanded language translation for app UI, including nested/static navigation text and categories.
+
+## Render-only media storage
+
+HYPER stores uploaded media under `/var/data/hyper-uploads` when the Render Persistent Disk is mounted. The Blueprint now mounts a 10 GB Render Persistent Disk at `/var/data`, so video files remain available after redeploy/restart on Render. This does not use a separate storage website.
+
+Important: Render Persistent Disks are not available on the Free web service plan. Use a Render plan that supports persistent disks. If the service stays on Free, uploaded files can still disappear after redeploy/restart even though the video record remains in the database.

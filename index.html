@@ -248,10 +248,10 @@ function downloadVideo(id){
  if(settingsState.wifiOnly&&navigator.connection&&!['wifi','ethernet'].includes(navigator.connection.type))return alert('Download on Wi‑Fi only is ON');
  const key=String(v.id),url=mediaUrl(v.video_url),title=(v.title||'HYPER-video').replace(/[^a-z0-9]/gi,'_')+'.mp4';
  if(downloadTasks.get(key)?.status==='downloading')return;
- const task={id:key,title:v.title||'HYPER video',progress:0,status:'downloading',message:'Downloading…'};downloadTasks.set(key,task);renderTransferDock();
+ const task={id:key,title:v.title||'HYPER video',progress:0,status:'downloading',message:'Downloading…'};downloadTasks.set(key,task);renderTransferDock();hyperSystemNotify('HYPER Download started',`${task.title} • 0%`,'hyper-download-'+key);
  const xhr=new XMLHttpRequest();xhr.open('GET',url,true);xhr.responseType='blob';let lastLoaded=0,lastStamp=Date.now(),speed=0;
- xhr.onprogress=e=>{if(e.lengthComputable){task.progress=Math.min(99,Math.round(e.loaded/e.total*100));const now=Date.now(),sec=Math.max(.2,(now-lastStamp)/1000),bps=(e.loaded-lastLoaded)/sec;if(bps>0)speed=speed?(.7*speed+.3*bps):bps;lastLoaded=e.loaded;lastStamp=now;task.message=`Downloading… ${task.progress}%${speed>0?' • '+formatTransferRate(speed):''}`;renderTransferDock()}};
- xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300){const blob=xhr.response;const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=title;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);task.progress=100;task.status='done';task.message='Download complete';let d=safeJSON(safeGet('hyper_downloads','[]'),[]);if(!d.some(x=>String(x.id)===key)){d.unshift(v);safeSet('hyper_downloads',JSON.stringify(d))}renderTransferDock();setTimeout(()=>{downloadTasks.delete(key);renderTransferDock()},3000)}else{task.status='error';task.message='Download failed (server/network)';renderTransferDock()}};
+ xhr.onprogress=e=>{if(e.lengthComputable){task.progress=Math.min(99,Math.round(e.loaded/e.total*100));const now=Date.now(),sec=Math.max(.2,(now-lastStamp)/1000),bps=(e.loaded-lastLoaded)/sec;if(bps>0)speed=speed?(.7*speed+.3*bps):bps;lastLoaded=e.loaded;lastStamp=now;task.message=`Downloading… ${task.progress}%${speed>0?' • '+formatTransferRate(speed):''}`;renderTransferDock();if(task._notifyProgress!==task.progress&&(task.progress%5===0||Date.now()-(task._notifyStamp||0)>12000)){task._notifyProgress=task.progress;task._notifyStamp=Date.now();notifyTransferToSW('HYPER Downloading',`${task.title} • ${task.progress}%`,'hyper-download-'+key)}}};
+ xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300){const blob=xhr.response;const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=title;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);task.progress=100;task.status='done';task.message='Download complete';hyperSystemNotify('HYPER Download complete',task.title,'hyper-download-'+key);let d=safeJSON(safeGet('hyper_downloads','[]'),[]);if(!d.some(x=>String(x.id)===key)){d.unshift(v);safeSet('hyper_downloads',JSON.stringify(d))}renderTransferDock();setTimeout(()=>{downloadTasks.delete(key);renderTransferDock()},3000)}else{task.status='error';task.message='Download failed (server/network)';renderTransferDock()}};
  xhr.onerror=()=>{task.status='error';task.message='Download failed — network/CORS problem';renderTransferDock()};
  xhr.onabort=()=>{task.status='error';task.message='Download cancelled';renderTransferDock()};
  xhr.send()
@@ -273,6 +273,9 @@ async function deleteVideo(id){if(!user)return auth();if(!confirm('Is video ko p
 
 
 let activeUploadXhrs=new Map(), uploadAbortControllers=new Map(), uploadRunning=new Set();
+async function hyperSystemNotify(title,body,tag='hyper-transfer'){try{if('Notification' in window&&Notification.permission==='default')await Notification.requestPermission();if('serviceWorker' in navigator&&Notification.permission==='granted'){const r=await navigator.serviceWorker.ready;r.showNotification(title,{body,tag,icon:'/icon-192.png',badge:'/icon-192.png',renotify:false}).catch(()=>{})}}catch(e){}}
+function notifyTransferToSW(title,body,tag){try{navigator.serviceWorker?.controller?.postMessage({type:'HYPER_NOTIFY',title,body,tag})}catch(e){}}
+
 function formatTransferRate(bytesPerSec){if(!isFinite(bytesPerSec)||bytesPerSec<=0)return '';if(bytesPerSec>=1048576)return (bytesPerSec/1048576).toFixed(1)+' MB/s';return Math.max(1,Math.round(bytesPerSec/1024))+' KB/s'}
 function openUploadDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('hyper-upload-queue',4);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('tasks'))db.createObjectStore('tasks',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 async function queueBackgroundUpload(task){const db=await openUploadDB();const record={...task,fileBlob:task.file||task.fileBlob||null,thumbnailBlob:task.thumbnail||task.thumbnailBlob||null,state:task.state||'waiting',chunk_size:Number(task.chunk_size)||8*1024*1024,progress:Number(task.progress)||0};delete record.file;delete record.thumbnail;await new Promise((resolve,reject)=>{const tx=db.transaction('tasks','readwrite');tx.objectStore('tasks').put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
@@ -311,8 +314,10 @@ async function uploadQueuedTask(q){
   const loadedMap={};
   for(let i=0;i<total;i++)if(received.has(i))loadedMap[i]=Math.min(CHUNK,Math.max(0,file.size-i*CHUNK));
   const receivedBytes=Object.values(loadedMap).reduce((a,b)=>a+b,0);
-  t.progress=Math.min(95,Math.floor((file.size?receivedBytes/file.size:0)*95));
-  t.committedProgress=t.progress;
+  const serverProgress=Math.min(95,Math.floor((file.size?receivedBytes/file.size:0)*95));
+  t.progress=Math.max(Number(t.progress)||0,serverProgress);
+  t.committedProgress=Math.max(Number(t.committedProgress)||0,serverProgress);
+  t.displayProgress=t.progress;
   t._speedBytes=receivedBytes; t._speedStamp=Date.now();
   t.message=receivedBytes?`Resuming… ${t.progress}% already uploaded`:'Starting upload…';
   persistUploadTasks();renderUploadDock();
@@ -329,13 +334,15 @@ async function uploadQueuedTask(q){
    // The durable checkpoint only advances after a whole chunk is confirmed by the server.
    const durableFrac=file.size?committed/file.size:0;
    const liveFrac=file.size?(committed+inFlight)/file.size:0;
-   t.committedProgress=Math.min(95,Math.floor(durableFrac*95));
-   t.progress=Math.min(95,Math.floor(liveFrac*95));
+   t.committedProgress=Math.max(Number(t.committedProgress)||0,Math.min(95,Math.floor(durableFrac*95)));
+   t.progress=Math.max(Number(t.progress)||0,Math.min(95,Math.floor(liveFrac*95)));
+   t.displayProgress=t.progress;
    const now=Date.now(),prev=t._speedStamp||now,delta=Math.max(0.2,(now-prev)/1000),bytesNow=(committed+inFlight)-(t._speedBytes||0);
    if(bytesNow>0){const inst=bytesNow/delta;t._speed=t._speed?(.7*t._speed+.3*inst):inst;t._speedBytes=committed+inFlight;t._speedStamp=now}
    const speed=t._speed>0?formatTransferRate(t._speed):'';
    t.message=speed?`Uploading… ${t.progress}% • ${speed}`:`Uploading… ${t.progress}%`;
    persistUploadTasks();renderUploadDock();
+   if(t._notifyProgress!==t.progress && (t.progress%5===0 || Date.now()-(t._notifyStamp||0)>12000)){t._notifyProgress=t.progress;t._notifyStamp=Date.now();notifyTransferToSW('HYPER Uploading',`${t.title||'Video'} • ${t.progress}%`,'hyper-upload-'+q.id)}
    if(!t._dbStamp||Date.now()-t._dbStamp>900){t._dbStamp=Date.now();updateUploadRecord(q.id,{progress:Number(t.committedProgress||0),committed_progress:Number(t.committedProgress||0),state:'uploading',size:file.size,filename:q.filename||file.name,mimetype:file.type||'video/mp4'});}
   };
   let cursor=0;
@@ -416,7 +423,7 @@ async function startUpload(){
  // Clear stale local task cards for the same file before creating a new task.
  uploadTasks=uploadTasks.filter(x=>!(x.fingerprint===fingerprint&&['paused','error'].includes(x.status)));
  let task={id,title,upload_id:String(id),progress:0,committedProgress:0,status:'uploading',message:'Starting upload…',_live:false,background:true,size:f.size,fingerprint,chunk_size:1024*1024};
- uploadTasks.push(task);persistUploadTasks();renderUploadDock();
+ uploadTasks.push(task);persistUploadTasks();renderUploadDock();hyperSystemNotify('HYPER Upload started',`${title} • 0%`,'hyper-upload-'+id);
  try{await queueBackgroundUpload({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}',state:'waiting'});uploadQueuedTask({id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',thumbnail:t||null,thumbnailName:t?.name||'',token:safeGet('hyper_token',''),upload_id:String(id),duration_seconds:durationSeconds,fingerprint,chunk_size:1024*1024,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}'})}catch(e){task.status='error';task.message='Upload start failed: '+e.message;persistUploadTasks();renderUploadDock()}
  setTimeout(()=>{['title','desc','video','thumb'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});setType('video');const catEl=document.getElementById('cat');if(catEl)catEl.value='Discover'},0)
 }
