@@ -116,8 +116,8 @@ Set these Render environment variables: CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPL
 
 This build now has a real video-ad integration path using the Google IMA SDK. During development it uses Google's test VAST tag; test ads do **not** generate revenue.
 
-### 1. Test ads immediately
-No extra key is needed. The server defaults to `HYPER_ADS_ENABLED=true` and `HYPER_ADS_TEST=true`, so a pre-roll test ad can play before the video.
+### 1. Production ads
+For real monetized ads, add the approved production VAST ad tag to Render. The production build is configured to use the real tag and not the Google sample tag.
 
 ### 2. Start real earning
 Create/approve a Google Ad Manager video monetization setup and obtain your production VAST ad tag URL. Then set these Render environment variables:

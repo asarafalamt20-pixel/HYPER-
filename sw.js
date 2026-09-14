@@ -11,6 +11,9 @@ async function postClients(msg){const cs=await self.clients.matchAll({type:'wind
 
 async function processUpload(q){
  if(!q||!q.fileBlob)return;
+ // Cloudinary uploads are resumed by the page using the stored File/Blob and
+ // Cloudinary's upload-id. Do not run the legacy Render chunk uploader too.
+ if(q.provider==='cloudinary')return;
  const token=q.token||'';const headers=token?{Authorization:'Bearer '+token}:{};
  const uploadId=String(q.upload_id||q.id);const base=self.location.origin+'/api/uploads/'+encodeURIComponent(uploadId);
  const file=q.fileBlob;const CHUNK=Number(q.chunk_size)||CHUNK_DEFAULT;const total=Math.ceil(file.size/CHUNK);

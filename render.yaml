@@ -22,6 +22,12 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: HYPER_ADS_ENABLED
+        value: 'true'
+      - key: HYPER_ADS_TEST
+        value: 'false'
+      - key: HYPER_VAST_AD_TAG_URL
+        sync: false
     disk:
       name: hyper-media
       mountPath: /var/data
