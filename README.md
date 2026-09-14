@@ -107,3 +107,29 @@ The HYPER Admin option is shown inside Account & Channel only for the configured
 HYPER stores uploaded media under `/var/data/hyper-uploads` when the Render Persistent Disk is mounted. The Blueprint now mounts a 10 GB Render Persistent Disk at `/var/data`, so video files remain available after redeploy/restart on Render. This does not use a separate storage website.
 
 Important: Render Persistent Disks are not available on the Free web service plan. Use a Render plan that supports persistent disks. If the service stays on Free, uploaded files can still disappear after redeploy/restart even though the video record remains in the database.
+
+
+## Cloudinary video storage (v2.2.0)
+Set these Render environment variables: CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET. Create an unsigned video upload preset in Cloudinary. Optional deletion cleanup uses CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET. Video bytes upload directly from the browser to Cloudinary using chunked Content-Range uploads; Render stores only metadata in Postgres.
+
+## HYPER video ads + earning (easy setup)
+
+This build now has a real video-ad integration path using the Google IMA SDK. During development it uses Google's test VAST tag; test ads do **not** generate revenue.
+
+### 1. Test ads immediately
+No extra key is needed. The server defaults to `HYPER_ADS_ENABLED=true` and `HYPER_ADS_TEST=true`, so a pre-roll test ad can play before the video.
+
+### 2. Start real earning
+Create/approve a Google Ad Manager video monetization setup and obtain your production VAST ad tag URL. Then set these Render environment variables:
+
+- `HYPER_ADS_ENABLED=true`
+- `HYPER_ADS_TEST=false`
+- `HYPER_VAST_AD_TAG_URL=<your production VAST ad tag URL>`
+
+Redeploy the server. Replace the test tag with the production tag only after the ad account/tag is approved. Do not click or generate your own ad impressions.
+
+### 3. Creator split already in HYPER
+Verified revenue settlement is recorded by the existing monetization ledger as **Creator 70% / HYPER Admin 30%**. The ad player logs impression/complete/error events; actual money credit still has to come from verified ad-network settlement, not from client-side self-reported events.
+
+### 4. Payout
+After verified revenue is settled into HYPER Studio, creators can see balance/earnings there. Live creator payouts require the existing RazorpayX payout configuration.

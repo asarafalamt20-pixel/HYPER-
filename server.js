@@ -1,8 +1,12 @@
 const express=require('express'),cors=require('cors'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),multer=require('multer'),path=require('path'),fs=require('fs'),crypto=require('crypto');
 const {Pool}=require('pg');
 const {S3Client,PutObjectCommand,DeleteObjectCommand}=require('@aws-sdk/client-s3');
+const {v2:cloudinary}=require('cloudinary');
 const app=express(),PORT=process.env.PORT||10000,SECRET=process.env.JWT_SECRET||'dev-secret';
+const cloudinaryConfigured=!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET);
+if(process.env.CLOUDINARY_CLOUD_NAME){cloudinary.config({cloud_name:process.env.CLOUDINARY_CLOUD_NAME,api_key:process.env.CLOUDINARY_API_KEY||'',api_secret:process.env.CLOUDINARY_API_SECRET||'',secure:true})}
 app.use(cors());app.use(express.json());
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'HYPER',version:'2.3.1'}));
 // Always fetch fresh feed/API data so newly published videos appear for every user/device.
 app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');next()});
 const defaultUploadDir=fs.existsSync('/var/data')?path.join('/var/data','hyper-uploads'):path.join(__dirname,'uploads');
@@ -26,7 +30,7 @@ async function db(){
  await pool.query(`CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY,username VARCHAR(50) UNIQUE NOT NULL,email VARCHAR(160) UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name VARCHAR(100) NOT NULL,full_name VARCHAR(100),channel_name VARCHAR(100),channel_description TEXT DEFAULT '',created_at TIMESTAMPTZ DEFAULT NOW(),avatar_url TEXT DEFAULT NULL);
  CREATE TABLE IF NOT EXISTS videos(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,title VARCHAR(200) NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT,type VARCHAR(20) DEFAULT 'video',category VARCHAR(30) DEFAULT 'Vlog',views INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW(),upload_key TEXT UNIQUE,duration_seconds INTEGER DEFAULT 0);
  ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE; ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100); ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_name VARCHAR(100); ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_description TEXT DEFAULT ''; ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_tags TEXT DEFAULT ''; UPDATE users SET full_name=COALESCE(full_name,display_name),channel_name=COALESCE(channel_name,display_name) WHERE full_name IS NULL OR channel_name IS NULL; ALTER TABLE videos ADD COLUMN IF NOT EXISTS category VARCHAR(30) DEFAULT 'Vlog'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS upload_key TEXT; CREATE UNIQUE INDEX IF NOT EXISTS videos_upload_key_uidx ON videos(upload_key) WHERE upload_key IS NOT NULL; CREATE TABLE IF NOT EXISTS subscriptions(subscriber_id INTEGER REFERENCES users(id) ON DELETE CASCADE,channel_id INTEGER REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(subscriber_id,channel_id));
- ALTER TABLE videos ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_status VARCHAR(20) DEFAULT 'approved'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_reason TEXT DEFAULT ''; ALTER TABLE videos ADD COLUMN IF NOT EXISTS original_language VARCHAR(20) DEFAULT 'auto'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS language_tracks JSONB DEFAULT '{}'::jsonb; ALTER TABLE videos ADD COLUMN IF NOT EXISTS subtitle_tracks JSONB DEFAULT '{}'::jsonb;
+ ALTER TABLE videos ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_status VARCHAR(20) DEFAULT 'approved'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS moderation_reason TEXT DEFAULT ''; ALTER TABLE videos ADD COLUMN IF NOT EXISTS original_language VARCHAR(20) DEFAULT 'auto'; ALTER TABLE videos ADD COLUMN IF NOT EXISTS language_tracks JSONB DEFAULT '{}'::jsonb; ALTER TABLE videos ADD COLUMN IF NOT EXISTS subtitle_tracks JSONB DEFAULT '{}'::jsonb; ALTER TABLE videos ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT; ALTER TABLE videos ADD COLUMN IF NOT EXISTS cloudinary_thumbnail_public_id TEXT;
  CREATE TABLE IF NOT EXISTS comments(id SERIAL PRIMARY KEY,video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,text TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
  CREATE TABLE IF NOT EXISTS watch_history(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,watched_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
  CREATE TABLE IF NOT EXISTS liked_videos(user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,video_id INTEGER NOT NULL,liked_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(user_id,video_id));
@@ -254,6 +258,34 @@ app.post('/api/uploads/:uploadId/complete',auth,upload.single('thumbnail'),async
  }catch(e){try{if(assembled&&!storageConfigured)fs.unlinkSync(assembled);if(req.file&&!storageConfigured)fs.unlinkSync(req.file.path)}catch{}console.error('Resumable upload error:',e);res.status(500).json({message:'Resumable upload failed. Please retry.'})}
 });
 
+app.get('/api/cloudinary/config',auth,async(req,res)=>{
+ if(!cloudinaryConfigured)return res.status(503).json({enabled:false,message:'Cloudinary is not configured on Render. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET.'});
+ res.json({enabled:true,cloud_name:process.env.CLOUDINARY_CLOUD_NAME,upload_preset:process.env.CLOUDINARY_UPLOAD_PRESET});
+});
+
+app.post('/api/videos/cloudinary',auth,async(req,res)=>{
+ if(!pool)return res.status(503).json({message:'Database is not connected. Add DATABASE_URL and restart the server.'});
+ if(!cloudinaryConfigured)return res.status(503).json({message:'Cloudinary is not configured on Render.'});
+ try{
+  const uq=await pool.query('SELECT is_suspended FROM users WHERE id=$1',[req.user.id]);
+  if(uq.rows[0]?.is_suspended)return res.status(403).json({message:'Your channel is currently suspended by HYPER Admin'});
+  const titleText=String(req.body.title||'Untitled').slice(0,200),descText=String(req.body.description||'');
+  const moderationText=(titleText+' '+descText).toLowerCase();
+  const blockedTerms=['porn','xxx','pornography','nude','nudity','sex video','sexual video','explicit sexual'];
+  if(blockedTerms.some(k=>moderationText.includes(k)))return res.status(400).json({message:'Video upload blocked by HYPER safety filter. Sexual/explicit content is not allowed.'});
+  const allowed=['Discover','Popular','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'];
+  const cat=allowed.includes(req.body.category)?req.body.category:'Discover';
+  const uploadKey=String(req.body.upload_key||'').trim()||null;
+  if(uploadKey){const ex=await pool.query('SELECT * FROM videos WHERE upload_key=$1 LIMIT 1',[uploadKey]);if(ex.rows[0])return res.json(ex.rows[0])}
+  const vurl=String(req.body.video_url||'').trim(); if(!/^https:\/\/res\.cloudinary\.com\//i.test(vurl))return res.status(400).json({message:'Invalid Cloudinary video URL'});
+  const thumb=String(req.body.thumbnail_url||'').trim()||null;
+  const q=await pool.query(`INSERT INTO videos(user_id,title,description,video_url,thumbnail_url,type,category,upload_key,duration_seconds,original_language,language_tracks,subtitle_tracks,cloudinary_public_id,cloudinary_thumbnail_public_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[req.user.id,titleText,descText,vurl,thumb,req.body.type==='short'?'short':'video',cat,uploadKey,Math.max(0,Math.round(Number(req.body.duration_seconds||0))),String(req.body.original_language||'auto'),req.body.language_tracks&&typeof req.body.language_tracks==='string'?req.body.language_tracks:'{}',req.body.subtitle_tracks&&typeof req.body.subtitle_tracks==='string'?req.body.subtitle_tracks:'{}',String(req.body.cloudinary_public_id||''),String(req.body.cloudinary_thumbnail_public_id||'')]);
+  await notifyAdmins('video_upload','New video uploaded',`Channel @${req.user.username} uploaded “${q.rows[0].title}”.`,req.user.id,q.rows[0].id);
+  const sq=await pool.query('SELECT subscriber_id FROM subscriptions WHERE channel_id=$1',[req.user.id]);for(const sub of sq.rows)await notifyUser(sub.subscriber_id,'subscription_upload',`New video from @${req.user.username}`,`@${req.user.username} uploaded “${q.rows[0].title}”.`,req.user.id,q.rows[0].id);
+  res.status(201).json(q.rows[0]);
+ }catch(e){console.error('Cloudinary video finalize error:',e);res.status(500).json({message:e.message||'Cloudinary publish failed'})}
+});
+
 app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thumbnail',maxCount:1}]),async(req,res)=>{
  if(pool){const uq=await pool.query('SELECT is_suspended,email,channel_name,display_name FROM users WHERE id=$1',[req.user.id]);if(uq.rows[0]?.is_suspended)return res.status(403).json({message:'Your channel is currently suspended by HYPER Admin'});}
 
@@ -282,7 +314,14 @@ app.post('/api/videos',auth,upload.fields([{name:'video',maxCount:1},{name:'thum
  catch(e){try{fs.unlinkSync(path.join(dir,vf.filename));if(req.files.thumbnail?.[0])fs.unlinkSync(path.join(dir,req.files.thumbnail[0].filename))}catch{}console.error('Publish error:',e);res.status(500).json({message:storageConfigured?'Permanent storage upload failed. Please try again.':'Publish failed. Please try again.'})}
 });
 app.put('/api/videos/:id',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected'});try{let q=await pool.query('SELECT id,title,description,category,type FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Video not found or not yours'});let title=String(req.body.title??q.rows[0].title).trim(),description=String((req.body.description??q.rows[0].description)||'').trim(),category=String((req.body.category??q.rows[0].category)||'Discover').trim();if(!title||title.length>200)return res.status(400).json({message:'Title must be 1-200 characters'});if(description.length>5000)return res.status(400).json({message:'Description is too long'});let r=await pool.query('UPDATE videos SET title=$1,description=$2,category=$3 WHERE id=$4 AND user_id=$5 RETURNING *',[title,description,category,req.params.id,req.user.id]);res.json(r.rows[0])}catch(e){res.status(500).json({message:e.message})}});
-app.delete('/api/videos/:id',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected'});try{let q=await pool.query('SELECT video_url,thumbnail_url FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Video not found or not yours'});await pool.query('DELETE FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);for(const u of [q.rows[0].video_url,q.rows[0].thumbnail_url]){if(u&&String(u).startsWith('/uploads/')){try{fs.unlinkSync(path.join(dir,String(u).replace(/^\/uploads\//,'')))}catch{}}else await deletePermanent(u)}res.json({deleted:true})}catch(e){res.status(500).json({message:e.message})}});
+app.delete('/api/videos/:id',auth,async(req,res)=>{if(!pool)return res.status(503).json({message:'Database is not connected'});try{let q=await pool.query('SELECT video_url,thumbnail_url,cloudinary_public_id,cloudinary_thumbnail_public_id FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!q.rows[0])return res.status(404).json({message:'Video not found or not yours'});await pool.query('DELETE FROM videos WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);for(const u of [q.rows[0].video_url,q.rows[0].thumbnail_url]){if(u&&String(u).startsWith('/uploads/')){try{fs.unlinkSync(path.join(dir,String(u).replace(/^\/uploads\//,'')))}catch{}}else await deletePermanent(u)}if(cloudinaryConfigured&&q.rows[0].cloudinary_public_id){try{await cloudinary.uploader.destroy(q.rows[0].cloudinary_public_id,{resource_type:'video',invalidate:true})}catch(e){console.warn('Cloudinary video delete failed:',e.message)}}if(cloudinaryConfigured&&q.rows[0].cloudinary_thumbnail_public_id){try{await cloudinary.uploader.destroy(q.rows[0].cloudinary_thumbnail_public_id,{resource_type:'image',invalidate:true})}catch(e){console.warn('Cloudinary thumbnail delete failed:',e.message)}}res.json({deleted:true})}catch(e){res.status(500).json({message:e.message})}});
+app.get('/api/ads/config',async(req,res)=>{
+ const testTag='https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=';
+ const real=String(process.env.HYPER_VAST_AD_TAG_URL||'').trim();
+ const enabled=String(process.env.HYPER_ADS_ENABLED||'true').toLowerCase()==='true';
+ const useTest=String(process.env.HYPER_ADS_TEST||'true').toLowerCase()==='true';
+ res.json({enabled:enabled && !!(real||useTest),test:!real&&useTest,ad_tag_url:real||testTag});
+});
 app.post('/api/ads/event',async(req,res)=>{
  try{if(pool){const id=Number(req.body.video_id);const kind=String(req.body.kind||'impression').slice(0,20);await pool.query('INSERT INTO ad_events(video_id,kind) VALUES($1,$2)',[Number.isFinite(id)?id:null,kind])}res.json({ok:true})}catch(e){res.status(500).json({message:e.message})}
 });
