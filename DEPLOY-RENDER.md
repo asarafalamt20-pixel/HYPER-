@@ -1,45 +1,43 @@
-# HYPER v2.3.1 — Full-stack Render deployment
+# HYPER v2.3.2 — Render + Cloudinary + Ads
 
-This project is a **Node/Express full-stack app**. Do not deploy it with Cloudflare Pages as static files; the browser needs the Express `/api/*` backend.
+This version is designed for **Render + PostgreSQL + Cloudinary**. AWS/S3 is not required.
 
-## 1) Put this project in GitHub
-Upload all files in this folder to a new GitHub repository.
+## Render
+Use a Render **Web Service** from this repository:
+- Build: `npm install`
+- Start: `npm start`
 
-## 2) Create the backend on Render
-Create a **Web Service** from the GitHub repository.
-
-- Runtime: Node
-- Build command: `npm install`
-- Start command: `npm start`
-- The included `render.yaml` can also be used as a Blueprint.
-
-## 3) Required environment variables
-Set these in Render:
-
-- `DATABASE_URL` — PostgreSQL connection string (Render Postgres is recommended)
-- `JWT_SECRET` — a long random secret
+Required environment variables:
+- `DATABASE_URL`
+- `JWT_SECRET`
 - `NODE_ENV=production`
 - `CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_UPLOAD_PRESET`
-- `CLOUDINARY_API_KEY` (if server-side Cloudinary operations are needed)
-- `CLOUDINARY_API_SECRET` (if server-side Cloudinary operations are needed)
 
-For production ads, add your approved VAST ad tag as:
+The app's Cloudinary upload flow uses the cloud name + unsigned upload preset. Do not put a Cloudinary API secret in the browser.
 
+## Cloudinary
+Create an unsigned upload preset in Cloudinary:
+1. Cloudinary Console → Settings → Upload → Upload presets
+2. Add upload preset
+3. Set **Signing Mode = Unsigned**
+4. Copy the preset name into `CLOUDINARY_UPLOAD_PRESET`
+5. Copy your Cloud name into `CLOUDINARY_CLOUD_NAME`
+
+## Ads
+The app includes Google IMA test-ad support. Test ads do not pay.
+For production, configure:
 - `HYPER_ADS_ENABLED=true`
 - `HYPER_ADS_TEST=false`
-- `HYPER_VAST_AD_TAG_URL=<your approved production VAST tag>`
+- `HYPER_VAST_AD_TAG_URL=<approved production VAST tag>`
 
-Until a real approved ad tag is configured, HYPER uses Google's IMA sample VAST tag for testing. Test ads do not generate real revenue.
+A real ad network account/approval is required before production ad revenue can be earned.
 
-## 4) Test
-After deployment open:
-
+## Test
+After Render deploys:
 `https://YOUR-RENDER-DOMAIN/api/health`
 
-It should return JSON containing `ok: true`.
+Expected JSON contains:
+`{"ok":true,"service":"HYPER","version":"2.3.2"}`
 
-Then open the main Render URL. Account creation, login, upload, settings, comments, likes, library and the `/api/*` routes all run from the same domain, so the previous Cloudflare `Server error 404` caused by missing `/api` routes is avoided.
-
-## 5) Monetization
-The app already contains the HYPER Studio ledger and a 70% creator / 30% HYPER accounting split. Actual ad revenue must come from an approved ad provider and verified revenue events; demo/test ad impressions are not payable revenue.
+Then sign in and test video upload. If Cloudinary variables are missing, Hyper will explicitly report that configuration is missing.

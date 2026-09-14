@@ -133,3 +133,6 @@ Verified revenue settlement is recorded by the existing monetization ledger as *
 
 ### 4. Payout
 After verified revenue is settled into HYPER Studio, creators can see balance/earnings there. Live creator payouts require the existing RazorpayX payout configuration.
+
+
+HYPER v2.3.2: AWS/S3 dependency removed. Use Cloudinary for permanent video uploads and Render for the Node backend.
