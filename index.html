@@ -119,8 +119,35 @@ function hyperAdTagWithCorrelator(tag){
   const sep=tag.includes('?')?'&':'?';
   return tag.replace(/([&?])correlator=[^&]*/,'$1correlator='+Date.now()+Math.floor(Math.random()*100000)) + (tag.includes('correlator=')?'':sep+'correlator='+Date.now());
 }
-function clearHyperAdOverlay(){const x=document.getElementById('hyperAdOverlay');if(x)x.innerHTML=''}
-function logHyperAdEvent(kind){try{api('/ads/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:selected?.id||null,kind})}).catch(()=>{})}catch(e){}}
+function hyperAdContainer(){
+  const overlay=document.getElementById('hyperAdOverlay');
+  if(!overlay)return null;
+  let c=document.getElementById('hyperImaContainer');
+  if(!c){
+    c=document.createElement('div');c.id='hyperImaContainer';
+    c.style.cssText='position:absolute;inset:0;width:100%;height:100%;z-index:11;';
+    overlay.appendChild(c);
+  }
+  return c;
+}
+function showHyperAdLoading(){
+  const overlay=document.getElementById('hyperAdOverlay'); if(!overlay)return;
+  hyperAdContainer();
+  let l=document.getElementById('hyperAdLoading');
+  if(!l){
+    l=document.createElement('div');l.id='hyperAdLoading';l.className='hyperAd';
+    l.innerHTML='<div class="hyperAdBox"><div class="hyperAdTop"><b class="hyperAdBrand">HYPER</b><span class="hyperAdBadge">ADVERTISEMENT</span></div><h3>Advertisement</h3><p>Ad is loading…</p></div>';
+    overlay.appendChild(l);
+  }
+  l.style.display='flex';
+}
+function clearHyperAdOverlay(){
+  const overlay=document.getElementById('hyperAdOverlay');
+  if(!overlay)return;
+  const l=document.getElementById('hyperAdLoading');if(l)l.remove();
+  const c=document.getElementById('hyperImaContainer');if(c)c.style.display='none';
+}
+function logHyperAdEvent(kind){try{api('/ads/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:selected?.id||null,kind})}).catch(()=>{})}catch(e){} }
 function resetHyperAdState(){
   try{hyperAdsManager?.destroy?.()}catch(e){}
   hyperAdsManager=null;hyperAdsLoader=null;hyperAdDisplayContainer=null;hyperAdVideoId=null;hyperAdShownThisPlay=false;hyperAdReplayPending=true;hyperAdInFlight=false;clearHyperAdOverlay();
@@ -134,9 +161,10 @@ function showPlayWithAdButton(){
 async function prepareHyperIMA(v){
   const cfg=HYPER_FORCE_TEST_ADS?{enabled:true,ad_tag_url:HYPER_TEST_VAST_TAG,test:true}:await getHyperAdsConfig();
   if(!cfg?.enabled||!cfg?.ad_tag_url||!window.google?.ima)return false;
-  const overlay=document.getElementById('hyperAdOverlay'); if(!overlay)return false;
+  const c=hyperAdContainer(); if(!c)return false;
+  c.style.display='block';
   if(!hyperAdDisplayContainer){
-    hyperAdDisplayContainer=new google.ima.AdDisplayContainer(overlay,v);
+    hyperAdDisplayContainer=new google.ima.AdDisplayContainer(c,v);
     hyperAdDisplayContainer.initialize();
   }
   return true;
@@ -148,15 +176,16 @@ function requestHyperAd(v){
       if(!cfg?.enabled||!cfg?.ad_tag_url||!window.google?.ima){resolve(false);return}
       const wrap=document.getElementById('videoWrap'),overlay=document.getElementById('hyperAdOverlay');
       if(!wrap||!overlay){resolve(false);return}
-      clearHyperAdOverlay();
-      overlay.innerHTML='<div class="hyperAd"><div class="hyperAdBox"><div class="hyperAdTop"><b class="hyperAdBrand">HYPER</b><span class="hyperAdBadge">ADVERTISEMENT</span></div><h3>Advertisement</h3><p>Ad is loading…</p></div></div>';
+      showHyperAdLoading();
+      const c=hyperAdContainer(); if(!c){resolve(false);return} c.style.display='block';
       hyperAdsLoader=new google.ima.AdsLoader(hyperAdDisplayContainer);
       let settled=false,finish=x=>{if(settled)return;settled=true;resolve(x)};
       hyperAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,e=>{
         try{
+          const l=document.getElementById('hyperAdLoading');if(l)l.style.display='none';
           hyperAdsManager=e.getAdsManager(v);hyperAdInFlight=true;
           hyperAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{logHyperAdEvent('error');clearHyperAdOverlay();hyperAdInFlight=false;finish(false);v.play().catch(()=>{})});
-          hyperAdsManager.addEventListener(google.ima.AdEvent.Type.STARTED,()=>logHyperAdEvent('impression'));
+          hyperAdsManager.addEventListener(google.ima.AdEvent.Type.STARTED,()=>{const l=document.getElementById('hyperAdLoading');if(l)l.style.display='none';logHyperAdEvent('impression')});
           hyperAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE,()=>logHyperAdEvent('complete'));
           hyperAdsManager.addEventListener(google.ima.AdEvent.Type.SKIPPED,()=>logHyperAdEvent('skipped'));
           hyperAdsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED,()=>{clearHyperAdOverlay();hyperAdInFlight=false;finish(true);v.play().catch(()=>{})});
@@ -167,6 +196,7 @@ function requestHyperAd(v){
       hyperAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{logHyperAdEvent('loader_error');clearHyperAdOverlay();hyperAdInFlight=false;finish(false);v.play().catch(()=>{})},false);
       const req=new google.ima.AdsRequest();req.adTagUrl=hyperAdTagWithCorrelator(cfg.ad_tag_url);req.linearAdSlotWidth=Math.max(320,wrap.clientWidth);req.linearAdSlotHeight=Math.max(180,v.clientHeight||360);req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth);req.nonLinearAdSlotHeight=Math.max(90,Math.round((v.clientHeight||360)*.25));
       req.setAdWillAutoPlay?.(false);req.setAdWillPlayMuted?.(false);hyperAdsLoader.requestAds(req);
+      setTimeout(()=>{if(!settled){clearHyperAdOverlay();hyperAdInFlight=false;finish(false);v.play().catch(()=>{})}},15000);
     }catch(e){clearHyperAdOverlay();hyperAdInFlight=false;resolve(false)}
   });
 }
