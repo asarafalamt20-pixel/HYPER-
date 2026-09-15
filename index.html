@@ -35,22 +35,6 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch .relatedRow .card{min-width:0!important;max-width:none!important;width:100%!important;scroll-snap-align:none;}
 @media(max-width:800px){.watch .relatedRow{grid-template-columns:1fr!important;}.watch .commentList{max-height:360px;}}
 
-
-/* HYPER v2.5.3: sticky watch player + expandable comments */
-.watch .videoWrap{position:sticky;top:70px;z-index:6;background:var(--bg);padding-bottom:4px;}
-.watch .videoWrap video{display:block;width:100%;max-height:65vh;object-fit:contain;}
-.watch .commentBox{position:relative;}
-.commentHeaderBtn{width:100%;display:flex;align-items:center;justify-content:space-between;border:0;background:none;color:var(--text);padding:0;text-align:left;font-weight:700;}
-.commentHeaderBtn .commentChevron{font-size:20px;color:var(--muted);transition:transform .18s ease;}
-.commentBox.open .commentChevron{transform:rotate(180deg);}
-.commentPanel{display:none;}
-.commentBox.open .commentPanel{display:block;}
-.commentItem{position:relative;padding-right:58px;}
-.commentActions{position:absolute;right:7px;top:8px;display:flex;gap:4px;}
-.commentActions button{border:0;background:transparent;color:var(--muted);font-size:14px;padding:4px 5px;border-radius:7px;}
-.commentActions button:hover{background:var(--card);color:var(--text);}
-@media(max-width:800px){.watch .videoWrap{top:70px;}.watch .videoWrap video{max-height:42vh;}}
-
 /* HYPER v2.5.2: YouTube-style mobile feed + contained comments + clean titles */
 .homePage{overflow-x:hidden;min-width:0}
 .homeFeed{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:22px!important;overflow:visible!important}
@@ -80,6 +64,26 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
   .watch .commentList{max-height:420px}
   .watch .relatedRow{gap:14px!important}
 }
+
+/* HYPER v2.5.3: YouTube-style comments collapse + no clipping */
+.watch{overflow-x:hidden;width:100%;max-width:100%;box-sizing:border-box}
+.watch h1{width:100%;max-width:100%;box-sizing:border-box;overflow:visible;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.2;margin:12px 0 5px}
+.watch .actions{display:flex;flex-wrap:wrap;gap:8px;width:100%;max-width:100%;box-sizing:border-box;overflow:visible}
+.watch .actions button,.watch .actions select{flex:0 1 auto;max-width:100%;white-space:normal;box-sizing:border-box}
+.watch .channel{display:flex;align-items:center;gap:10px;width:100%;max-width:100%;box-sizing:border-box;overflow:hidden;flex-wrap:wrap}
+.watch .channel>div{min-width:0;flex:1 1 120px}
+.watch .channel>div b{display:block;overflow-wrap:anywhere;word-break:break-word}
+.watch .channel>button.sub,.watch .channel>button.subscribed{flex:0 0 auto;max-width:100%;white-space:nowrap}
+.watch .commentBox{width:100%;max-width:100%;box-sizing:border-box;overflow:hidden;margin-top:16px}
+.commentToggle{width:100%;border:0;background:transparent;color:var(--text);display:flex;align-items:center;justify-content:space-between;font-size:22px;font-weight:700;padding:4px 0;cursor:pointer}
+.watchCommentsContent{width:100%;box-sizing:border-box;padding-top:12px}
+.watchCommentsContent[hidden],.watchRelatedSection[hidden]{display:none!important}
+.watch .commentComposer{width:100%;display:flex;gap:8px;align-items:center;box-sizing:border-box}
+.watch .commentComposer input{flex:1 1 auto;width:0;min-width:0;box-sizing:border-box}
+.watch .commentComposer button{flex:0 0 auto;white-space:nowrap}
+.watch .commentList{width:100%;max-width:100%;box-sizing:border-box;max-height:420px;overflow-y:auto;overflow-x:hidden;padding:0 2px 2px 0}
+.watch .relatedRow{width:100%;max-width:100%;box-sizing:border-box}
+@media(max-width:600px){.watch h1{font-size:22px}.watch .actions{gap:7px}.watch .actions button{padding:9px 12px}.watch .channel{gap:8px}.commentToggle{font-size:21px}.watch .commentComposer{align-items:stretch}.watch .commentComposer input{font-size:15px}.watch .commentComposer button{padding:10px 14px}}
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
@@ -156,9 +160,10 @@ function relatedVideos(){
   let out=[...sameCat,...sameChannel,...rest];
   return out.filter((v,i,a)=>a.findIndex(x=>String(x.id)===String(v.id))===i).slice(0,8);
 }
+function toggleWatchComments(){const box=document.getElementById('watchCommentBox');const content=document.getElementById('watchCommentsContent');const related=document.getElementById('watchRelatedSection');const chev=document.getElementById('commentChevron');if(!box||!content)return;const opening=content.hidden;content.hidden=!opening;if(related)related.hidden=opening;if(chev)chev.textContent=opening?'⌃':'⌄';if(opening){setTimeout(()=>document.getElementById('comments')?.scrollIntoView({block:'nearest'}),0)}}
 function watchPage(){
   let u=selected?.username||'',subscribed=!!subscriptionState[u],rel=relatedVideos();
-  return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><button onclick="openNativePiP()">⧉ Mini Player</button><button onclick="enableBackgroundPlayback()">🔊 Background Play</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}<button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><div class="commentBox" id="commentBox"><button class="commentHeaderBtn" onclick="toggleComments()" aria-expanded="false"><span>Comments <span id="commentCount"></span></span><span class="commentChevron">⌄</span></button><div class="commentPanel" id="commentPanel">${user?`<div class="commentComposer"><input id="commentText" placeholder="Add a comment" maxlength="1000"><button class="primary" onclick="comment()">Comment</button></div>`:''}<div id="comments" class="commentList"><div class="commentEmpty">Loading comments...</div></div></div></div><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div></main>`
+  return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><button onclick="openNativePiP()">⧉ Mini Player</button><button onclick="enableBackgroundPlayback()">🔊 Background Play</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}<button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><div class="commentBox" id="watchCommentBox"><button type="button" class="commentToggle" onclick="toggleWatchComments()"><span>Comments${commentsCount!==undefined&&commentsCount!==null?' '+commentsCount:''}</span><span id="commentChevron">⌄</span></button><div id="watchCommentsContent" class="watchCommentsContent" hidden>${user?`<div class="commentComposer"><input id="commentText" placeholder="Add a comment" maxlength="1000"><button class="primary" onclick="comment()">Comment</button></div>`:''}<div id="comments" class="commentList"><div class="commentEmpty">Loading comments...</div></div></div></div><div id="watchRelatedSection" class="watchRelatedSection"><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div></div></main>`
 }
 const HYPER_FORCE_TEST_ADS=true;
 const HYPER_TEST_VAST_TAG='https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&correlator=';
@@ -443,51 +448,8 @@ async function countView(id){
   if(window._viewCounted)return;window._viewCounted=true;
   try{let r=await api('/videos/'+id+'/view',{method:'POST'});let v=videos.find(x=>String(x.id)===String(id));if(v)v.views=r.views;if(selected&&String(selected.id)===String(id))selected.views=r.views;let e=document.getElementById('watchViews');if(e)e.textContent=fmt(r.views)+' views • '+(selected.category||'Video')}catch(e){window._viewCounted=false}
 }
-function toggleComments(force){
-  const box=document.getElementById('commentBox');if(!box)return;
-  const open=force===undefined?!box.classList.contains('open'):!!force;
-  box.classList.toggle('open',open);
-  const b=box.querySelector('.commentHeaderBtn');if(b)b.setAttribute('aria-expanded',String(open));
-}
-function canEditComment(c){
-  if(!user||!c)return false;
-  const ids=[c.user_id,c.author_id,c.owner_id,c.created_by_id].filter(x=>x!=null).map(String);
-  if(ids.includes(String(user.id)))return true;
-  const names=[c.username,c.author_username,c.owner_username,c.user_username].filter(Boolean).map(x=>String(x).toLowerCase());
-  return !!user.username&&names.includes(String(user.username).toLowerCase());
-}
-function commentActions(c){
-  if(!canEditComment(c))return '';
-  return `<div class="commentActions"><button type="button" title="Edit" onclick="editComment(${JSON.stringify(c.id)},event)">✏️</button><button type="button" title="Delete" onclick="deleteComment(${JSON.stringify(c.id)},event)">🗑️</button></div>`;
-}
-async function loadComments(){
-  if(!selected)return;
-  try{
-    let d=await api('/videos/'+selected.id+'/comments');
-    const box=document.getElementById('comments');if(!box)return;
-    const arr=Array.isArray(d)?d:(Array.isArray(d.comments)?d.comments:[]);
-    const count=document.getElementById('commentCount');if(count)count.textContent=arr.length?' '+arr.length:'';
-    box.innerHTML=arr.length?arr.map(c=>`<div class="commentItem" data-comment-id="${escapeHtml(c.id)}"><b>${escapeHtml(c.display_name||c.username||'User')}</b><p>${escapeHtml(c.text||'')}</p>${commentActions(c)}</div>`).join(''):'<div class="commentEmpty">No comments yet.</div>';
-  }catch{if(document.getElementById('comments'))document.getElementById('comments').innerHTML='<div class="commentEmpty">Comments available after database connection.</div>'}
-}
-async function comment(){let el=document.getElementById('commentText'),text=el?.value.trim();if(!text)return;if(!user)return auth();try{await api('/videos/'+selected.id+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});el.value='';toggleComments(true);loadComments()}catch(e){alert(e.message)}}
-async function editComment(id,e){
-  e?.stopPropagation();if(!user)return auth();
-  const item=document.querySelector(`.commentItem[data-comment-id="${CSS.escape(String(id))}"]`);const p=item?.querySelector('p');
-  const next=prompt('Edit comment',p?.textContent||'');if(next===null)return;const text=next.trim();if(!text)return;
-  try{
-    let r;
-    try{r=await api('/videos/'+selected.id+'/comments/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})}
-    catch(err){if(!/405|404/.test(String(err.message||'')))throw err;r=await api('/videos/'+selected.id+'/comments/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})}
-    await loadComments();toggleComments(true);
-  }catch(err){alert(err.message||'Comment edit nahi ho saka.')}
-}
-async function deleteComment(id,e){
-  e?.stopPropagation();if(!user)return auth();
-  if(!confirm('Is comment ko delete karna hai?'))return;
-  try{await api('/videos/'+selected.id+'/comments/'+encodeURIComponent(id),{method:'DELETE'});await loadComments();toggleComments(true)}catch(err){alert(err.message||'Comment delete nahi ho saka.')}
-}
-
+async function loadComments(){if(!selected)return;try{let d=await api('/videos/'+selected.id+'/comments');const box=document.getElementById('comments');if(!box)return;box.innerHTML=d.length?d.map(c=>`<div class="commentItem"><b>${escapeHtml(c.display_name||'User')}</b><p>${escapeHtml(c.text)}</p></div>`).join(''):'<div class="commentEmpty">No comments yet.</div>'}catch{if(document.getElementById('comments'))document.getElementById('comments').innerHTML='<div class="commentEmpty">Comments available after database connection.</div>'}}
+async function comment(){let el=document.getElementById('commentText'),text=el?.value.trim();if(!text)return;if(!user)return auth();try{await api('/videos/'+selected.id+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});el.value='';loadComments()}catch(e){alert(e.message)}}
 async function like(id){
   if(!user)return auth();
   const v=videos.find(x=>String(x.id)===String(id))||selected;
@@ -961,6 +923,30 @@ window.addEventListener('pagehide',()=>{const p=document.getElementById('player'
 window.addEventListener('beforeunload',()=>{const p=document.getElementById('player');if(p&&selected){const pos=String(Math.floor(p.currentTime||0));safeSet('hyper_pos_'+selected.id,pos);safeSet('hyper_watch_pos',pos);safeSet('hyper_watch_id',String(selected.id));}});
 window.addEventListener('pageshow',()=>{reconcileUploadQueue().catch(()=>{});refreshNotificationDot().catch(()=>{})});
 setInterval(()=>{if(document.visibilityState==='visible')reconcileUploadQueue().catch(()=>{})},12000);
-// v2.5.3: no auto mini-player on page scroll; watch player stays sticky in place.
+window.addEventListener('scroll',()=>{if(tab!=='watch')return;let wrap=document.getElementById('videoWrap');let v=document.getElementById('player')||window.miniVideo;if(!wrap||!v)return;let r=wrap.getBoundingClientRect();if(r.bottom<78&&v.paused===false&&!window.miniVideo){const ph=document.createElement('div');ph.id='scrollPlayerPlaceholder';ph.style='width:100%;aspect-ratio:16/9;background:#000;border-radius:16px';wrap.replaceChildren(ph);window.miniVideo=v;v.dataset.videoId=String(selected?.id||'');let box=ensureMiniContainer(),slot=box.querySelector('#miniSlot');slot.appendChild(v);v.style.borderRadius='0';v.style.maxHeight='none';box.style.display='block'}else if(r.bottom>=78&&window.miniVideo===v){let box=document.getElementById('miniPlayer');let ph=document.getElementById('scrollPlayerPlaceholder');if(ph)ph.replaceWith(v);else wrap.prepend(v);v.id='player';v.style='';window.miniVideo=null;if(box)box.style.display='none'}});
 load().then(()=>restoreRoute());
 </script></body></html>
+<style>
+/* v2.5.4: compact watch title + clean vertical related feed */
+.watch{overflow-x:hidden;padding-bottom:88px}
+.watch h1{font-size:19px!important;line-height:1.3!important;font-weight:700!important;margin:8px 0 3px!important;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+.watch .actions{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;gap:8px!important;margin:7px 0!important;padding:2px 2px 7px!important;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.watch .actions::-webkit-scrollbar{display:none}
+.watch .actions button{flex:0 0 auto!important;white-space:nowrap!important;padding:8px 12px!important}
+.watch .channel{min-width:0;overflow:hidden}
+.watch .channel>div{min-width:0;overflow:hidden}
+.watch .channel b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.watch .channel button{flex:0 0 auto!important;white-space:nowrap!important}
+.watchRelatedSection{margin-top:12px!important;width:100%!important;min-width:0!important}
+.watch .relatedTitle{font-size:24px!important;margin:10px 0 10px!important;padding:0!important}
+.watch .relatedRow{display:flex!important;flex-direction:column!important;gap:14px!important;width:100%!important;max-width:100%!important;overflow:visible!important;padding:0!important;margin:0!important}
+.watch .relatedRow .card{width:100%!important;min-width:0!important;max-width:none!important;display:block!important}
+.watch .relatedRow .card .meta{min-width:0}
+.watch .relatedRow .card .meta>div:last-child{min-width:0;overflow:hidden}
+.watch .relatedRow .card .meta h3{font-size:15px!important;line-height:1.3!important;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+@media(max-width:600px){
+ .watch h1{font-size:18px!important}
+ .watch .relatedTitle{font-size:23px!important}
+ .watch .relatedRow{gap:12px!important}
+}
+</style>
