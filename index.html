@@ -276,6 +276,38 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
   display:none!important;
 }
 
+
+/* HYPER v2.5.10: keep the active player pinned and visible while the page content below scrolls.
+   Scrolling must never turn the player into a custom mini-player or let it disappear. */
+@media(max-width:600px){
+  .watch .videoWrap{
+    position:fixed!important;
+    top:70px!important;
+    left:12px!important;
+    right:12px!important;
+    width:auto!important;
+    margin:0!important;
+    z-index:50!important;
+    background:#000!important;
+    border-radius:16px!important;
+    overflow:hidden!important;
+    box-shadow:0 5px 18px #0004!important;
+  }
+  .watch .videoWrap video{
+    display:block!important;
+    width:100%!important;
+    height:auto!important;
+    aspect-ratio:16/9!important;
+    max-height:none!important;
+    object-fit:contain!important;
+    border-radius:16px!important;
+  }
+  .watch .watchTools{
+    margin-top:calc((100vw - 24px) * .5625 + 24px)!important;
+  }
+  .watch .videoOverlayHint{z-index:52!important}
+  .watch #hyperAdOverlay{z-index:53!important}
+}
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
