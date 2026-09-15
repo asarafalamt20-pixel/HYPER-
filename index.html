@@ -127,6 +127,149 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
  .watch .channel{margin-left:12px!important;margin-right:12px!important;width:calc(100% - 24px)!important;}
  .watch .channel>button:last-child{margin-right:8px!important;padding:8px 14px!important;min-width:96px!important;}
 }
+
+/* HYPER v2.5.6: final watch layout / player inset / vertical related feed */
+.watch .videoWrap{
+  width:calc(100% - 24px)!important;
+  max-width:100%!important;
+  margin:0 12px!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+  border-radius:16px!important;
+  min-width:0!important;
+}
+.watch .videoWrap video{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  height:auto!important;
+  aspect-ratio:16/9!important;
+  object-fit:contain!important;
+  background:#000!important;
+  border-radius:16px!important;
+}
+.watch .watchTools{
+  margin-left:12px!important;
+  margin-right:12px!important;
+  width:calc(100% - 24px)!important;
+  max-width:calc(100% - 24px)!important;
+  box-sizing:border-box!important;
+}
+.watchTitle,.watch h1{
+  margin-left:12px!important;
+  margin-right:12px!important;
+  width:calc(100% - 24px)!important;
+  max-width:calc(100% - 24px)!important;
+  box-sizing:border-box!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+  white-space:normal!important;
+}
+.watch #watchViews{
+  margin-left:12px!important;
+  margin-right:12px!important;
+  width:calc(100% - 24px)!important;
+  box-sizing:border-box!important;
+}
+.watch .actionPrimary,
+.watch .actionOwner{
+  min-width:0!important;
+}
+.watch .commentBox{
+  margin-left:12px!important;
+  margin-right:12px!important;
+  width:calc(100% - 24px)!important;
+  max-width:calc(100% - 24px)!important;
+  box-sizing:border-box!important;
+}
+.watch .relatedTitle{
+  margin-left:12px!important;
+  margin-right:12px!important;
+  width:calc(100% - 24px)!important;
+  box-sizing:border-box!important;
+}
+.watch .relatedRow{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  gap:16px!important;
+  width:calc(100% - 24px)!important;
+  max-width:calc(100% - 24px)!important;
+  margin-left:12px!important;
+  margin-right:12px!important;
+  overflow:visible!important;
+  box-sizing:border-box!important;
+}
+.watch .relatedRow .card{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+}
+@media(max-width:600px){
+  .watch .videoWrap{
+    width:calc(100% - 24px)!important;
+    margin-left:12px!important;
+    margin-right:12px!important;
+  }
+  .watch .videoWrap video{
+    aspect-ratio:16/9!important;
+    object-fit:contain!important;
+  }
+  .watchTitle,.watch h1{
+    font-size:21px!important;
+    line-height:1.28!important;
+    margin-left:12px!important;
+    margin-right:12px!important;
+    width:calc(100% - 24px)!important;
+  }
+  .watch .relatedRow{
+    width:calc(100% - 24px)!important;
+    max-width:calc(100% - 24px)!important;
+    margin-left:12px!important;
+    margin-right:12px!important;
+  }
+}
+/* Preserve the currently playing video's position when UI is refreshed/re-rendered. */
+.watch .videoWrap #player{
+  contain:layout paint;
+}
+
+
+/* HYPER v2.5.7: keep playing video in its place while content below scrolls */
+@media (max-width:600px){
+  .watch .videoWrap{
+    position:sticky!important;
+    top:0!important;
+    z-index:50!important;
+    background:#fff!important;
+    padding-top:0!important;
+    padding-bottom:8px!important;
+  }
+  .watch .videoWrap video{
+    position:relative!important;
+    z-index:51!important;
+  }
+  .watch .watchTools,
+  .watchTitle,
+  .watch h1,
+  .watch #watchViews,
+  .watch .commentBox,
+  .watch .relatedTitle,
+  .watch .relatedRow{
+    position:relative!important;
+    z-index:1!important;
+  }
+}
+/* Desktop/tablet: player remains visible while related/content scrolls below it. */
+@media (min-width:601px){
+  .watch .videoWrap{
+    position:sticky!important;
+    top:0!important;
+    z-index:50!important;
+    background:#fff!important;
+  }
+}
+
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
@@ -173,7 +316,7 @@ function formatDuration(sec){sec=Math.max(0,Math.round(Number(sec)||0));if(!sec)
 function getDurationFromVideoFile(file){return new Promise(resolve=>{if(!file)return resolve(0);let u=URL.createObjectURL(file),v=document.createElement('video');v.preload='metadata';v.onloadedmetadata=()=>{let d=Number.isFinite(v.duration)?Math.round(v.duration):0;URL.revokeObjectURL(u);resolve(d)};v.onerror=()=>{URL.revokeObjectURL(u);resolve(0)};v.src=u})}
 function card(v){
   const mine=isMine(v);
-  return `<article class="card ${v.type==='short'?'shortCard':''}" onclick="watch(${v.id})"><div class="thumb"><img src="${mediaUrl(v.thumbnail_url||v.thumbnail||'')}" loading="lazy" onerror="this.style.display='none';this.parentNode.classList.add('mediaMissing')"><span class="duration">${formatDuration(v.duration_seconds)||v.duration||''}</span>${v.type==='short'?'<span class="shortBadge">SHORT</span>':''}<button type="button" class="videoMenuBtn" title="More options" onclick="toggleVideoMenu(${v.id},event)">⋮</button><div id="videoMenu-${v.id}" class="videoMenu" hidden onclick="event.stopPropagation()"><button onclick="menuSave(${v.id},event)">🔖 Save / Unsave</button><button onclick="menuSaveAs(${v.id},event)">📁 Save as…</button><button onclick="menuDownload(${v.id},event)">⬇️ Download</button><button onclick="menuShare(${v.id},event)">↗ Share</button><button onclick="menuCopyLink(${v.id},event)">🔗 Copy link</button>${mine?`<button onclick="menuEdit(${v.id},event)">✏️ Edit video</button><button onclick="menuDelete(${v.id},event)">🗑️ Delete video</button>`:''}</div></div><div class="meta" style="align-items:flex-start"><button onclick="event.stopPropagation();openChannel('${escapeHtml(v.username||'')}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(v)}</button><div><h3>${escapeHtml(v.title)}</h3><button onclick="event.stopPropagation();openChannel('${escapeHtml(v.username||'')}')" style="border:0;background:none;padding:0;color:var(--muted);cursor:pointer">${escapeHtml(v.channel||v.display_name||'')}</button><small style="display:block;margin-top:5px">${fmt(v.views)} views • ${v.category||'Video'}</small></div></div></article>`
+  return `<article class="card ${v.type==='short'?'shortCard':''}" onclick="watchWithPreRoll(${v.id},event)"><div class="thumb"><img src="${mediaUrl(v.thumbnail_url||v.thumbnail||'')}" loading="lazy" onerror="this.style.display='none';this.parentNode.classList.add('mediaMissing')"><span class="duration">${formatDuration(v.duration_seconds)||v.duration||''}</span>${v.type==='short'?'<span class="shortBadge">SHORT</span>':''}<button type="button" class="videoMenuBtn" title="More options" onclick="toggleVideoMenu(${v.id},event)">⋮</button><div id="videoMenu-${v.id}" class="videoMenu" hidden onclick="event.stopPropagation()"><button onclick="menuSave(${v.id},event)">🔖 Save / Unsave</button><button onclick="menuSaveAs(${v.id},event)">📁 Save as…</button><button onclick="menuDownload(${v.id},event)">⬇️ Download</button><button onclick="menuShare(${v.id},event)">↗ Share</button><button onclick="menuCopyLink(${v.id},event)">🔗 Copy link</button>${mine?`<button onclick="menuEdit(${v.id},event)">✏️ Edit video</button><button onclick="menuDelete(${v.id},event)">🗑️ Delete video</button>`:''}</div></div><div class="meta" style="align-items:flex-start"><button onclick="event.stopPropagation();openChannel('${escapeHtml(v.username||'')}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(v)}</button><div><h3>${escapeHtml(v.title)}</h3><button onclick="event.stopPropagation();openChannel('${escapeHtml(v.username||'')}')" style="border:0;background:none;padding:0;color:var(--muted);cursor:pointer">${escapeHtml(v.channel||v.display_name||'')}</button><small style="display:block;margin-top:5px">${fmt(v.views)} views • ${v.category||'Video'}</small></div></div></article>`
 }
 function short(v){return `<article class="short" onclick="watch(${v.id})"><img src="${mediaUrl(v.thumbnail_url||v.thumbnail||'')}" onerror="this.style.display='none';this.parentNode.classList.add('mediaMissing')"><div><b>${escapeHtml(v.title)}</b><small>${fmt(v.views)} views</small></div></article>`}
 function makeMiniDraggable(x){if(!x||x.dataset.dragReady)return;x.dataset.dragReady='1';let dragging=false,sx=0,sy=0,sl=0,st=0,moved=false;const start=e=>{if(e.target.closest('.miniClose'))return;dragging=true;moved=false;let p=e.touches?e.touches[0]:e;sx=p.clientX;sy=p.clientY;let r=x.getBoundingClientRect();sl=r.left;st=r.top;try{e.preventDefault()}catch{}};const move=e=>{if(!dragging)return;let p=e.touches?e.touches[0]:e;let dx=p.clientX-sx,dy=p.clientY-sy;if(Math.abs(dx)+Math.abs(dy)>6)moved=true;let maxX=Math.max(0,innerWidth-x.offsetWidth),maxY=Math.max(0,innerHeight-x.offsetHeight);let left=Math.min(maxX,Math.max(0,sl+dx)),top=Math.min(maxY,Math.max(0,st+dy));x.style.left=left+'px';x.style.top=top+'px';x.style.right='auto';x.style.bottom='auto';try{e.preventDefault()}catch{}};const end=()=>{if(!dragging)return;dragging=false;if(moved)x.dataset.justDragged='1',setTimeout(()=>delete x.dataset.justDragged,220)};let h=x.querySelector('.miniDragHandle');if(h){h.addEventListener('pointerdown',start);h.addEventListener('pointermove',move);h.addEventListener('pointerup',end);h.addEventListener('pointercancel',end);h.addEventListener('touchstart',start,{passive:false});h.addEventListener('touchmove',move,{passive:false});h.addEventListener('touchend',end)}x.addEventListener('click',e=>{if(x.dataset.justDragged){e.stopPropagation();e.preventDefault()}})}
@@ -322,6 +465,71 @@ function wireHyperVideoAds(){
   v.addEventListener('ended',()=>{hyperAdReplayPending=true;hyperAdShownThisPlay=false;v.dataset.hyperFirstGesture='';setTimeout(showPlayWithAdButton,0)});
   v.addEventListener('seeking',()=>{if(v.currentTime<=1.5){hyperAdReplayPending=true;hyperAdShownThisPlay=false}});
 }
+
+async function watchWithPreRoll(id, ev){
+  try{ev?.stopPropagation?.()}catch(e){}
+  const target=videoById(id)||videos.find(x=>String(x.id)===String(id));
+  if(!target)return;
+  // Short videos keep their direct-play behavior.
+  if(target.type==='short'){await watch(id);return;}
+  const old=currentHyperPlayer();
+  try{old?.pause?.()}catch(e){}
+  // The tap on the Home/Related card is the user gesture: initialize IMA now,
+  // then open the selected video automatically after the ad finishes/skips.
+  const cfg=HYPER_FORCE_TEST_ADS?{enabled:true,ad_tag_url:HYPER_TEST_VAST_TAG,test:true}:hyperAdsConfig;
+  if(!cfg?.enabled||!cfg?.ad_tag_url||!window.google?.ima){
+    await watch(id);
+    setTimeout(()=>document.getElementById('player')?.play?.().catch?.(()=>{}),350);
+    return;
+  }
+  const overlay=document.createElement('div');
+  overlay.id='hyperPreRollOverlay';
+  overlay.style.cssText='position:fixed;inset:0;background:#000;z-index:99999;display:flex;align-items:center;justify-content:center;';
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:relative;width:min(100vw,900px);height:min(56.25vw,506px);background:#000;';
+  const av=document.createElement('video');
+  av.id='hyperPreRollVideo';av.setAttribute('playsinline','');av.setAttribute('webkit-playsinline','');
+  av.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';
+  wrap.appendChild(av);overlay.appendChild(wrap);document.body.appendChild(overlay);
+  let finished=false,loader=null,manager=null,display=null;
+  const closeAndOpen=async()=>{
+    if(finished)return; finished=true;
+    try{manager?.destroy?.()}catch(e){} try{display?.destroy?.()}catch(e){}
+    overlay.remove();
+    await watch(id);
+    setTimeout(()=>{
+      const v=document.getElementById('player');
+      if(v)v.play().catch(()=>{ showPlayWithAdButton(); });
+    },350);
+  };
+  try{
+    display=new google.ima.AdDisplayContainer(wrap,av);
+    // This call is intentionally made directly from the card tap.
+    display.initialize();
+    loader=new google.ima.AdsLoader(display);
+    loader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,e=>{
+      try{
+        manager=e.getAdsManager(av);
+        manager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED,closeAndOpen);
+        manager.addEventListener(google.ima.AdEvent.Type.CONTENT_RESUME_REQUESTED,closeAndOpen);
+        manager.addEventListener(google.ima.AdEvent.Type.SKIPPED,closeAndOpen);
+        manager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,closeAndOpen);
+        manager.init(Math.max(320,wrap.clientWidth),Math.max(180,wrap.clientHeight),google.ima.ViewMode.NORMAL);
+        manager.start();
+      }catch(err){closeAndOpen();}
+    });
+    loader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,closeAndOpen);
+    const req=new google.ima.AdsRequest();
+    req.adTagUrl=hyperAdTagWithCorrelator(cfg.ad_tag_url);
+    req.linearAdSlotWidth=Math.max(320,wrap.clientWidth);
+    req.linearAdSlotHeight=Math.max(180,wrap.clientHeight);
+    req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth);
+    req.nonLinearAdSlotHeight=90;
+    req.setAdWillAutoPlay?.(true);req.setAdWillPlayMuted?.(false);
+    loader.requestAds(req);
+    setTimeout(()=>closeAndOpen(),15000);
+  }catch(e){closeAndOpen();}
+}
 function currentHyperPlayer(){return document.getElementById('player')||window.miniVideo||null}
 async function openNativePiP(){
   const v=currentHyperPlayer(); if(!v)return;
@@ -450,7 +658,7 @@ async function watch(id){
   if(!found){try{found=await api('/videos/'+encodeURIComponent(id)+'?fresh='+Date.now())}catch(e){console.warn('Watch fetch failed',e)}}
   if(!found)return;
   selected={...found}; tab='watch'; setRoute({type:'watch',id:String(id)});
-  safeSet('hyper_watch_id',String(id)); safeSet('hyper_watch_pos','0');
+  safeSet('hyper_watch_id',String(id)); if(!safeGet('hyper_watch_pos')) safeSet('hyper_watch_pos','0');
   window._viewCounted=false; clearTimeout(window._viewTimer); await render();
   if(user)api('/videos/'+id+'/history',{method:'POST'}).catch(()=>{});
   setTimeout(()=>{
@@ -967,5 +1175,5 @@ window.addEventListener('beforeunload',()=>{const p=document.getElementById('pla
 window.addEventListener('pageshow',()=>{reconcileUploadQueue().catch(()=>{});refreshNotificationDot().catch(()=>{})});
 setInterval(()=>{if(document.visibilityState==='visible')reconcileUploadQueue().catch(()=>{})},12000);
 window.addEventListener('scroll',()=>{if(tab!=='watch')return;let wrap=document.getElementById('videoWrap');let v=document.getElementById('player')||window.miniVideo;if(!wrap||!v)return;let r=wrap.getBoundingClientRect();if(r.bottom<78&&v.paused===false&&!window.miniVideo){const ph=document.createElement('div');ph.id='scrollPlayerPlaceholder';ph.style='width:100%;aspect-ratio:16/9;background:#000;border-radius:16px';wrap.replaceChildren(ph);window.miniVideo=v;v.dataset.videoId=String(selected?.id||'');let box=ensureMiniContainer(),slot=box.querySelector('#miniSlot');slot.appendChild(v);v.style.borderRadius='0';v.style.maxHeight='none';box.style.display='block'}else if(r.bottom>=78&&window.miniVideo===v){let box=document.getElementById('miniPlayer');let ph=document.getElementById('scrollPlayerPlaceholder');if(ph)ph.replaceWith(v);else wrap.prepend(v);v.id='player';v.style='';window.miniVideo=null;if(box)box.style.display='none'}});
-load().then(()=>restoreRoute());
+load().then(()=>{getHyperAdsConfig().catch(()=>{});restoreRoute()});
 </script></body></html>
