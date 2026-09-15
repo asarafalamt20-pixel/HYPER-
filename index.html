@@ -105,11 +105,19 @@ function watchPage(){
   let u=selected?.username||'',subscribed=!!subscriptionState[u],rel=relatedVideos();
   return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><button onclick="openNativePiP()">⧉ Mini Player</button><button onclick="enableBackgroundPlayback()">🔊 Background Play</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}<button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div><h2>Comments</h2><div id="comments"><p class="muted">Loading comments...</p></div>${user?`<div class="actions"><input id="commentText" placeholder="Add a comment" style="flex:1;padding:11px;border:1px solid var(--line);border-radius:20px"><button class="primary" onclick="comment()">Comment</button></div>`:''}</main>`
 }
+const HYPER_FORCE_TEST_ADS=true;
+const HYPER_TEST_VAST_TAG='https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&correlator=';
 let hyperAdsConfig=null,hyperAdsManager=null,hyperAdsLoader=null,hyperAdDisplayContainer=null,hyperAdVideoId=null,hyperAdShownThisPlay=false,hyperAdReplayPending=true,hyperAdInFlight=false;
 async function getHyperAdsConfig(){
   if(hyperAdsConfig)return hyperAdsConfig;
+  if(HYPER_FORCE_TEST_ADS){hyperAdsConfig={enabled:true,ad_tag_url:HYPER_TEST_VAST_TAG,test:true};return hyperAdsConfig}
   try{hyperAdsConfig=await api('/ads/config')}catch(e){hyperAdsConfig={enabled:false,ad_tag_url:''}}
   return hyperAdsConfig;
+}
+function hyperAdTagWithCorrelator(tag){
+  if(!tag)return tag;
+  const sep=tag.includes('?')?'&':'?';
+  return tag.replace(/([&?])correlator=[^&]*/,'$1correlator='+Date.now()+Math.floor(Math.random()*100000)) + (tag.includes('correlator=')?'':sep+'correlator='+Date.now());
 }
 function clearHyperAdOverlay(){const x=document.getElementById('hyperAdOverlay');if(x)x.innerHTML=''}
 function logHyperAdEvent(kind){try{api('/ads/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:selected?.id||null,kind})}).catch(()=>{})}catch(e){}}
@@ -124,7 +132,7 @@ function showPlayWithAdButton(){
   b.onclick=()=>playHyperFromGesture(v);b.hidden=false;
 }
 async function prepareHyperIMA(v){
-  const cfg=await getHyperAdsConfig();
+  const cfg=HYPER_FORCE_TEST_ADS?{enabled:true,ad_tag_url:HYPER_TEST_VAST_TAG,test:true}:await getHyperAdsConfig();
   if(!cfg?.enabled||!cfg?.ad_tag_url||!window.google?.ima)return false;
   const overlay=document.getElementById('hyperAdOverlay'); if(!overlay)return false;
   if(!hyperAdDisplayContainer){
@@ -136,7 +144,7 @@ async function prepareHyperIMA(v){
 function requestHyperAd(v){
   return new Promise(async resolve=>{
     try{
-      const cfg=await getHyperAdsConfig();
+      const cfg=HYPER_FORCE_TEST_ADS?{enabled:true,ad_tag_url:HYPER_TEST_VAST_TAG,test:true}:await getHyperAdsConfig();
       if(!cfg?.enabled||!cfg?.ad_tag_url||!window.google?.ima){resolve(false);return}
       const wrap=document.getElementById('videoWrap'),overlay=document.getElementById('hyperAdOverlay');
       if(!wrap||!overlay){resolve(false);return}
@@ -157,7 +165,7 @@ function requestHyperAd(v){
         }catch(err){clearHyperAdOverlay();hyperAdInFlight=false;finish(false);v.play().catch(()=>{})}
       },false);
       hyperAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{logHyperAdEvent('loader_error');clearHyperAdOverlay();hyperAdInFlight=false;finish(false);v.play().catch(()=>{})},false);
-      const req=new google.ima.AdsRequest();req.adTagUrl=cfg.ad_tag_url;req.linearAdSlotWidth=Math.max(320,wrap.clientWidth);req.linearAdSlotHeight=Math.max(180,v.clientHeight||360);req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth);req.nonLinearAdSlotHeight=Math.max(90,Math.round((v.clientHeight||360)*.25));
+      const req=new google.ima.AdsRequest();req.adTagUrl=hyperAdTagWithCorrelator(cfg.ad_tag_url);req.linearAdSlotWidth=Math.max(320,wrap.clientWidth);req.linearAdSlotHeight=Math.max(180,v.clientHeight||360);req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth);req.nonLinearAdSlotHeight=Math.max(90,Math.round((v.clientHeight||360)*.25));
       req.setAdWillAutoPlay?.(false);req.setAdWillPlayMuted?.(false);hyperAdsLoader.requestAds(req);
     }catch(e){clearHyperAdOverlay();hyperAdInFlight=false;resolve(false)}
   });
