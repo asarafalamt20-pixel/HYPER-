@@ -63,9 +63,9 @@ navigator.serviceWorker?.addEventListener('message',e=>{if(e.data?.type==='HYPER
 async function load(){let ok=false;for(let attempt=0;attempt<3&&!ok;attempt++){try{let d=await api('/videos?cacheBust='+Date.now());if(Array.isArray(d)){videos=d;ok=true}}catch(e){if(attempt===2)console.warn('Feed load failed',e);await new Promise(r=>setTimeout(r,400*(attempt+1)))}}await loadSubscriptions();await reconcileUploadQueue();await render();registerBackgroundSync().catch(()=>{})}
 async function loadSubscriptions(){if(!user)return;try{let cs=await api('/me/subscriptions');subscriptionState={};cs.forEach(c=>subscriptionState[c.username]=true);safeSet('hyper_subscriptions_'+user.username,JSON.stringify(subscriptionState))}catch(e){}}
 function avatarHtml(u,cls='ava'){return u&&u.avatar_url?`<div class="${cls}"><img src="${u.avatar_url}"></div>`:`<div class="${cls}">${(u?.channel_name||u?.display_name||u?.channel||'H')[0].toUpperCase()}</div>`}
-function header(){return `<header class="top"><div class="logo"><span class="mark">H</span><b>HYPER</b></div><div class="search"><input id="search" value="${escapeHtml(q)}" placeholder="Search videos, channels..."><button onclick="doSearch()">⌕</button></div>${user?`<div style="display:flex;align-items:center;gap:7px"><button class="sign notifBtn" title="Notifications" onclick="openNotifications()">🔔<span id="notifDot" class="notifDot" style="display:none"></span></button><button class="sign" onclick="openChannel('${escapeHtml(user.username)}')">${user.avatar_url?`<img class="avatarImg" src="${mediaUrl(user.avatar_url)}">`:(user.display_name||'U')[0].toUpperCase()}</button><button class="sign" title="Switch account" onclick="auth('switch')">⇄</button><button class="sign" title="Settings" onclick="go('settings')">⚙️</button></div>`:`<div style="display:flex;align-items:center;gap:7px"><button class="sign" onclick="auth()">Sign in</button><button class="sign" title="Settings" onclick="go('settings')">⚙️</button></div>`}</header><nav class="chips">${['All','Discover','Popular','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'].map(x=>`<button class="${x===category?'on':''}" onclick="setCategory('${x}')">${x}</button>`).join('')}</nav>`}
+function header(){return `<header class="top"><div class="logo"><span class="mark">H</span><b>HYPER</b></div><div class="search"><input id="search" value="${escapeHtml(q)}" placeholder="Search videos, channels..."><button onclick="doSearch()">⌕</button></div>${user?`<div style="display:flex;align-items:center;gap:7px"><button class="sign notifBtn" title="Notifications" onclick="openNotifications()">🔔<span id="notifDot" class="notifDot" style="display:none"></span></button><button class="sign" onclick="openChannel('${escapeHtml(user.username)}')">${user.avatar_url?`<img class="avatarImg" src="${escapeHtml(mediaUrl(user.avatar_url))}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml((user.display_name||'U')[0].toUpperCase())}'}))">`:(user.display_name||'U')[0].toUpperCase()}</button><button class="sign" title="Switch account" onclick="auth('switch')">⇄</button><button class="sign" title="Settings" onclick="go('settings')">⚙️</button></div>`:`<div style="display:flex;align-items:center;gap:7px"><button class="sign" onclick="auth()">Sign in</button><button class="sign" title="Settings" onclick="go('settings')">⚙️</button></div>`}</header><nav class="chips">${['All','Discover','Popular','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'].map(x=>`<button class="${x===category?'on':''}" onclick="setCategory('${x}')">${x}</button>`).join('')}</nav>`}
 function escapeHtml(s){return String(s||'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-function mediaUrl(u){if(!u)return '';return /^https?:\/\//i.test(u)?u:(location.origin+('/'+String(u).replace(/^\//,'')))}
+function mediaUrl(u){if(!u)return '';let s=String(u);if(/^(https?:|data:|blob:|mediastream:)/i.test(s))return s;return location.origin+('/'+s.replace(/^\//,''))}
 function isMine(v){return !!(user&&v&&((v.user_id!=null&&String(user.id)===String(v.user_id))||(v.username&&user.username&&String(v.username).toLowerCase()===String(user.username).toLowerCase())))}
 function formatDuration(sec){sec=Math.max(0,Math.round(Number(sec)||0));if(!sec)return '';let h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`}
 function getDurationFromVideoFile(file){return new Promise(resolve=>{if(!file)return resolve(0);let u=URL.createObjectURL(file),v=document.createElement('video');v.preload='metadata';v.onloadedmetadata=()=>{let d=Number.isFinite(v.duration)?Math.round(v.duration):0;URL.revokeObjectURL(u);resolve(d)};v.onerror=()=>{URL.revokeObjectURL(u);resolve(0)};v.src=u})}
@@ -225,10 +225,23 @@ async function openNativePiP(){
   const v=currentHyperPlayer(); if(!v)return;
   try{
     if(document.pictureInPictureElement){await document.exitPictureInPicture();return;}
+    // A user tap on Mini Player is also a valid gesture: start the video first
+    // so Android Chrome/Brave can enter PiP without the old 'play first' error.
+    if(v.paused){try{await v.play()}catch(e){}}
     if(v.requestPictureInPicture){await v.requestPictureInPicture();return;}
     if(v.webkitSetPresentationMode){v.webkitSetPresentationMode('picture-in-picture');return;}
-    alert('Is browser me Picture-in-Picture support available nahi hai. Chrome/Brave ko latest version me use karein.');
-  }catch(e){console.warn('PiP failed',e);alert('Mini Player start nahi ho saka. Video ko pehle play karke dobara try karein.')}
+    // Web fallback: keep the same video in a draggable floating mini player.
+    const box=ensureMiniContainer();
+    const slot=box.querySelector('#miniSlot');
+    if(slot && v.parentElement!==slot){slot.appendChild(v);v.style.borderRadius='0';v.dataset.videoId=String(selected?.id||'');window.miniVideo=v;}
+    box.style.display='block';
+  }catch(e){
+    console.warn('PiP failed',e);
+    // Do not show a blocking alert. Fall back to the in-page mini player.
+    const box=ensureMiniContainer(),slot=box.querySelector('#miniSlot');
+    if(slot && v.parentElement!==slot){slot.appendChild(v);v.style.borderRadius='0';v.dataset.videoId=String(selected?.id||'');window.miniVideo=v;}
+    box.style.display='block';
+  }
 }
 function setupHyperMediaSession(v){
   if(!v||!('mediaSession' in navigator))return;
