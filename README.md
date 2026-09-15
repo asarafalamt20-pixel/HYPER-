@@ -154,3 +154,6 @@ HYPER v2.3.2: AWS/S3 dependency removed. Use Cloudinary for permanent video uplo
 - Upload progress UI/localStorage updates are throttled on mobile so rendering/storage work does not slow the network transfer.
 - Upload card now shows transfer speed and a rough remaining-time estimate when available.
 - Cloudinary remains the direct upload destination; actual network speed still depends on the phone/network and Cloudinary connection.
+# HYPER v2.4.6 – Profile Upload Fix
+
+Fixes mobile "request entity too large" when saving a profile picture. Profile images are resized to 256px and compressed to a small JPEG before the profile JSON request.
