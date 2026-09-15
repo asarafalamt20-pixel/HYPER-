@@ -101,9 +101,13 @@ function relatedVideos(){
 }
 function watchPage(){
   let u=selected?.username||'',subscribed=!!subscriptionState[u],rel=relatedVideos();
-  return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}<button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div><h2>Comments</h2><div id="comments"><p class="muted">Loading comments...</p></div>${user?`<div class="actions"><input id="commentText" placeholder="Add a comment" style="flex:1;padding:11px;border:1px solid var(--line);border-radius:20px"><button class="primary" onclick="comment()">Comment</button></div>`:''}</main>`
+  return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><button onclick="openNativePiP()">⧉ Mini Player</button><button onclick="enableBackgroundPlayback()">🔊 Background Play</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}<button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div><h2>Comments</h2><div id="comments"><p class="muted">Loading comments...</p></div>${user?`<div class="actions"><input id="commentText" placeholder="Add a comment" style="flex:1;padding:11px;border:1px solid var(--line);border-radius:20px"><button class="primary" onclick="comment()">Comment</button></div>`:''}</main>`
 }
 let hyperAdsConfig=null,hyperAdsStartedFor=null,hyperAdsManager=null,hyperAdsLoader=null;
+// A video gets a fresh ad opportunity each time playback is started from the
+// beginning. Closing/backing out and opening the video again also creates a
+// fresh ad opportunity. Normal pause/resume in the middle does not.
+let hyperAdReplayPending=false,hyperAdLastProgress=0;
 async function getHyperAdsConfig(){
   if(hyperAdsConfig)return hyperAdsConfig;
   try{hyperAdsConfig=await api('/ads/config')}catch(e){hyperAdsConfig={enabled:false}}
@@ -111,56 +115,128 @@ async function getHyperAdsConfig(){
 }
 function clearHyperAdOverlay(){const x=document.getElementById('hyperAdOverlay');if(x)x.innerHTML=''}
 function logHyperAdEvent(kind){try{api('/ads/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:selected?.id||null,kind})}).catch(()=>{})}catch(e){}}
+function resetHyperAdState(){
+  try{hyperAdsManager?.destroy?.()}catch(e){}
+  hyperAdsManager=null; hyperAdsLoader=null; hyperAdsStartedFor=null;
+  window.hyperAdInProgress=false; window.hyperAdSkipNextPlay=false;
+  hyperAdReplayPending=true; hyperAdLastProgress=0; clearHyperAdOverlay();
+}
 async function startHyperVideoAd(){
-  const v=document.getElementById('player'); if(!v||!selected||hyperAdsStartedFor===String(selected.id)||window.hyperAdInProgress)return;
-  // A new play from the beginning is a new ad opportunity. Do not permanently
-  // remember that the user already watched/skipped an ad for this video.
+  const v=document.getElementById('player');
+  if(!v||!selected||window.hyperAdInProgress)return;
+  if(hyperAdsStartedFor===String(selected.id) && !hyperAdReplayPending)return;
   window.hyperAdInProgress=true;
+  hyperAdReplayPending=false;
   const cfg=await getHyperAdsConfig();
-  if(!cfg?.enabled||!window.google?.ima){hyperAdsStartedFor=String(selected.id);v.play().catch(()=>{});return}
+  if(!cfg?.enabled||!window.google?.ima){
+    hyperAdsStartedFor=String(selected.id);window.hyperAdInProgress=false;v.play().catch(()=>{});return;
+  }
   hyperAdsStartedFor=String(selected.id);
   const wrap=document.getElementById('videoWrap'),overlay=document.getElementById('hyperAdOverlay');
-  if(!wrap||!overlay){v.play().catch(()=>{});return}
+  if(!wrap||!overlay){window.hyperAdInProgress=false;v.play().catch(()=>{});return}
   overlay.innerHTML='<div class="hyperAd"><div class="hyperAdBox"><div class="hyperAdTop"><b class="hyperAdBrand">HYPER</b><span class="hyperAdBadge">ADVERTISEMENT</span></div><h3>Advertisement</h3><p>Ad is loading… video will continue after the ad.</p></div></div>';
   try{
-    const adDisplayContainer=new google.ima.AdDisplayContainer(overlay,v);
-    adDisplayContainer.initialize();
+    const adDisplayContainer=new google.ima.AdDisplayContainer(overlay,v); adDisplayContainer.initialize();
     hyperAdsLoader=new google.ima.AdsLoader(adDisplayContainer);
     hyperAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,e=>{
       hyperAdsManager=e.getAdsManager(v);
-      hyperAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{logHyperAdEvent('error');clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdsStartedFor=null;v.play().catch(()=>{})});
-      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.STARTED,()=>{logHyperAdEvent('impression');});
-      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE,()=>{logHyperAdEvent('complete');window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdsStartedFor=null});
-      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.SKIPPED,()=>{logHyperAdEvent('skipped');window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdsStartedFor=null});
-      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED,()=>{clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdsStartedFor=null;v.play().catch(()=>{})});
+      hyperAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{
+        logHyperAdEvent('error');clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;v.play().catch(()=>{});
+      });
+      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.STARTED,()=>logHyperAdEvent('impression'));
+      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE,()=>{
+        logHyperAdEvent('complete');window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdReplayPending=false;
+      });
+      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.SKIPPED,()=>{
+        logHyperAdEvent('skipped');window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdReplayPending=false;
+      });
+      hyperAdsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED,()=>{
+        clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdReplayPending=false;v.play().catch(()=>{});
+      });
       try{
         hyperAdsManager.init(Math.max(320,wrap.clientWidth),Math.max(180,v.clientHeight||360),google.ima.ViewMode.NORMAL);
         hyperAdsManager.start();
-      }catch(err){clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdsStartedFor=null;v.play().catch(()=>{})}
+      }catch(err){clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;v.play().catch(()=>{})}
     },false);
-    hyperAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{logHyperAdEvent('loader_error');clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;hyperAdsStartedFor=null;v.play().catch(()=>{})},false);
-    const req=new google.ima.AdsRequest();
-    req.adTagUrl=cfg.ad_tag_url;
-    req.linearAdSlotWidth=Math.max(320,wrap.clientWidth);
-    req.linearAdSlotHeight=Math.max(180,v.clientHeight||360);
-    req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth);
-    req.nonLinearAdSlotHeight=Math.max(90,Math.round((v.clientHeight||360)*0.25));
+    hyperAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,()=>{
+      logHyperAdEvent('loader_error');clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;v.play().catch(()=>{});
+    },false);
+    const req=new google.ima.AdsRequest(); req.adTagUrl=cfg.ad_tag_url;
+    req.linearAdSlotWidth=Math.max(320,wrap.clientWidth); req.linearAdSlotHeight=Math.max(180,v.clientHeight||360);
+    req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth); req.nonLinearAdSlotHeight=Math.max(90,Math.round((v.clientHeight||360)*0.25));
     hyperAdsLoader.requestAds(req);
-  }catch(e){clearHyperAdOverlay();v.play().catch(()=>{})}
+  }catch(e){clearHyperAdOverlay();window.hyperAdInProgress=false;window.hyperAdSkipNextPlay=true;v.play().catch(()=>{})}
 }
 function wireHyperVideoAds(){
   const v=document.getElementById('player'); if(!v)return;
-  hyperAdsStartedFor=null; window.hyperAdInProgress=false; window.hyperAdSkipNextPlay=false;
+  bindHyperBackgroundPlayback(v);
+  resetHyperAdState();
   v.addEventListener('play',function(){
     if(window.hyperAdSkipNextPlay){window.hyperAdSkipNextPlay=false;return;}
     if(window.hyperAdInProgress)return;
-    // Show a fresh ad whenever the viewer starts this video again from the beginning.
-    // Normal pause/resume in the middle does not trigger another ad.
-    if(v.currentTime<=1.5 && selected?.type!=='short'){
+    // Replays from the start always get a new ad. This also covers replay
+    // after the viewer leaves/cuts the video and opens it again.
+    if((v.currentTime<=1.5 || hyperAdReplayPending) && selected?.type!=='short'){
       v.pause(); startHyperVideoAd();
     }
   });
+  v.addEventListener('timeupdate',function(){
+    if(v.currentTime>2)hyperAdLastProgress=v.currentTime;
+    // User dragged back to the beginning after watching: next play is a new ad opportunity.
+    if(hyperAdLastProgress>2 && v.currentTime<=1.5){hyperAdReplayPending=true;}
+  });
+  v.addEventListener('ended',function(){
+    hyperAdReplayPending=true; hyperAdLastProgress=0;
+  });
+  // Start only after the ad listener is installed, avoiding the autoplay race.
+  if(settingsState.autoplay)setTimeout(()=>v.play().catch(()=>{}),60);
 }
+function currentHyperPlayer(){return document.getElementById('player')||window.miniVideo||null}
+async function openNativePiP(){
+  const v=currentHyperPlayer(); if(!v)return;
+  try{
+    if(document.pictureInPictureElement){await document.exitPictureInPicture();return;}
+    if(v.requestPictureInPicture){await v.requestPictureInPicture();return;}
+    if(v.webkitSetPresentationMode){v.webkitSetPresentationMode('picture-in-picture');return;}
+    alert('Is browser me Picture-in-Picture support available nahi hai. Chrome/Brave ko latest version me use karein.');
+  }catch(e){console.warn('PiP failed',e);alert('Mini Player start nahi ho saka. Video ko pehle play karke dobara try karein.')}
+}
+function setupHyperMediaSession(v){
+  if(!v||!('mediaSession' in navigator))return;
+  try{
+    navigator.mediaSession.metadata=new MediaMetadata({title:selected?.title||'HYPER Video',artist:selected?.channel||'HYPER',album:'HYPER'});
+    const seekBy=10;
+    navigator.mediaSession.setActionHandler('play',()=>v.play().catch(()=>{}));
+    navigator.mediaSession.setActionHandler('pause',()=>v.pause());
+    try{navigator.mediaSession.setActionHandler('seekbackward',d=>{v.currentTime=Math.max(0,v.currentTime-(d.seekOffset||seekBy))})}catch(e){}
+    try{navigator.mediaSession.setActionHandler('seekforward',d=>{v.currentTime=Math.min(v.duration||Infinity,v.currentTime+(d.seekOffset||seekBy))})}catch(e){}
+    try{navigator.mediaSession.setActionHandler('previoustrack',()=>{})}catch(e){}
+    try{navigator.mediaSession.setActionHandler('nexttrack',()=>{})}catch(e){}
+  }catch(e){console.warn('Media Session setup failed',e)}
+}
+async function enableBackgroundPlayback(){
+  const v=currentHyperPlayer(); if(!v)return;
+  setupHyperMediaSession(v);
+  try{await openNativePiP()}catch(e){}
+  if(!v.paused)return;
+  v.play().catch(()=>{});
+}
+function keepHyperPlaybackAlive(){
+  const v=currentHyperPlayer(); if(!v)return;
+  setupHyperMediaSession(v);
+  // Never pause the content video just because the page became hidden.
+  // Android/Browser may still suspend a normal webpage; native PiP is the reliable route.
+  if(document.visibilityState==='visible' && window._hyperWasPlaying && v.paused){v.play().catch(()=>{})}
+}
+function bindHyperBackgroundPlayback(v){
+  if(!v||v.dataset.bgBound)return;
+  v.dataset.bgBound='1';
+  setupHyperMediaSession(v);
+  v.addEventListener('play',()=>{window._hyperWasPlaying=true;setupHyperMediaSession(v);if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing'});
+  v.addEventListener('pause',()=>{window._hyperWasPlaying=false;if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused'});
+  v.addEventListener('ended',()=>{window._hyperWasPlaying=false;if('mediaSession' in navigator)navigator.mediaSession.playbackState='none'});
+}
+
 function toggleVideoFullscreen(){
   const wrap=document.getElementById('videoWrap'),v=document.getElementById('player');
   if(!wrap||!v)return;
@@ -335,12 +411,47 @@ function editVideo(id){
   if(!user)return auth();
   let v=videoById(id)||selected;if(!v||!isMine(v))return alert('Sirf apne video ko edit kar sakte hain');
   let old=document.getElementById('videoEditModal');if(old)old.remove();
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="videoEditModal"><div class="auth"><button class="close" onclick="videoEditModal.remove()">×</button><h2>Edit Video</h2><label style="display:block;margin:10px 0 5px">Title</label><input id="editVideoTitle" value="${escapeHtml(v.title||'')}" maxlength="200"><label style="display:block;margin:10px 0 5px">Description</label><textarea id="editVideoDesc" style="width:100%;min-height:120px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--text);box-sizing:border-box">${escapeHtml(v.description||'')}</textarea><label style="display:block;margin:10px 0 5px">Category</label><select id="editVideoCategory" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--text)">${['Discover','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'].map(c=>`<option ${String(v.category||'Discover').toLowerCase()===c.toLowerCase()?'selected':''}>${c}</option>`).join('')}</select><div class="actions"><button class="primary" onclick="saveVideoEdit(${id})">Save Changes</button><button onclick="videoEditModal.remove()">Cancel</button></div></div></div>`);
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="videoEditModal"><div class="auth" style="max-width:700px;max-height:88vh;overflow:auto"><button class="close" onclick="videoEditModal.remove()">×</button><h2>Edit Video</h2>
+  <label style="display:block;margin:10px 0 5px">Title</label><input id="editVideoTitle" value="${escapeHtml(v.title||'')}" maxlength="200">
+  <label style="display:block;margin:10px 0 5px">Description</label><textarea id="editVideoDesc" style="width:100%;min-height:120px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--text);box-sizing:border-box">${escapeHtml(v.description||'')}</textarea>
+  <label style="display:block;margin:10px 0 5px">Category</label><select id="editVideoCategory" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--text)">${['Discover','Entertainment','News','Education','Sports','Music','Gaming','Lifestyle','Creator'].map(c=>`<option ${String(v.category||'Discover').toLowerCase()===c.toLowerCase()?'selected':''}>${c}</option>`).join('')}</select>
+  <div style="margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:14px"><b>🖼️ Thumbnail change</b><p class="muted" style="margin:6px 0 10px">Naya thumbnail select karein. Purana thumbnail tabhi replace hoga jab Save Changes successful ho.</p><input id="editVideoThumbnail" type="file" accept="image/*"><img id="editThumbPreview" src="${mediaUrl(v.thumbnail_url||v.thumbnail||'')}" style="display:${(v.thumbnail_url||v.thumbnail)?'block':'none'};width:100%;max-height:180px;object-fit:cover;border-radius:10px;margin-top:10px" onerror="this.style.display='none'"></div>
+  <div style="margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:14px"><b>🎬 Video change</b><p class="muted" style="margin:6px 0 10px">Naya video select karein. Existing video ko replace kar dega.</p><input id="editVideoFile" type="file" accept="video/*"><video id="editVideoPreview" controls playsinline style="display:none;width:100%;max-height:220px;border-radius:10px;margin-top:10px"></video></div>
+  <div id="editVideoProgress" class="notice" style="display:none;margin-top:12px"></div>
+  <div class="actions"><button id="editVideoSaveBtn" class="primary" onclick="saveVideoEdit(${id})">Save Changes</button><button onclick="videoEditModal.remove()">Cancel</button></div></div></div>`);
+  document.getElementById('editVideoThumbnail')?.addEventListener('change',e=>{const f=e.target.files?.[0],img=document.getElementById('editThumbPreview');if(!f||!img)return;img.src=URL.createObjectURL(f);img.style.display='block'});
+  document.getElementById('editVideoFile')?.addEventListener('change',e=>{const f=e.target.files?.[0],vid=document.getElementById('editVideoPreview');if(!f||!vid)return;vid.src=URL.createObjectURL(f);vid.style.display='block';vid.load()});
+}
+async function uploadEditCloudinaryFile(file,cfg,resourceType='image',progressCb){
+  if(!file)return null;
+  if(resourceType==='image'||file.size<=100*1024*1024){return await cloudinarySimpleUpload(file,cfg,resourceType,(loaded,total)=>progressCb?.(loaded,total))}
+  const total=file.size,CHUNK=20*1024*1024,uploadId='hyper-edit-'+Date.now()+'-'+cryptoRandom();let final=null;
+  for(let start=0;start<total;start+=CHUNK){const blob=file.slice(start,Math.min(total,start+CHUNK));let attempt=0;while(true){try{final=await cloudinaryChunkUpload(file,blob,start,total,uploadId,cfg,(loaded)=>progressCb?.(Math.min(total,start+loaded),total));break}catch(e){if(++attempt>=5)throw e;await new Promise(r=>setTimeout(r,800*Math.min(attempt,4)))}}}
+  return final;
 }
 async function saveVideoEdit(id){
-  if(!user)return auth();let title=(document.getElementById('editVideoTitle')?.value||'').trim(),description=(document.getElementById('editVideoDesc')?.value||'').trim(),category=document.getElementById('editVideoCategory')?.value||'Discover';
+  if(!user)return auth();
+  let title=(document.getElementById('editVideoTitle')?.value||'').trim(),description=(document.getElementById('editVideoDesc')?.value||'').trim(),category=document.getElementById('editVideoCategory')?.value||'Discover';
+  const videoFile=document.getElementById('editVideoFile')?.files?.[0]||null,thumbFile=document.getElementById('editVideoThumbnail')?.files?.[0]||null;
   if(!title)return alert('Title required');
-  try{let x=await api('/videos/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,description,category})});videos=videos.map(v=>String(v.id)===String(id)?{...v,...x}:v);if(selected&&String(selected.id)===String(id))selected={...selected,...x};document.getElementById('videoEditModal')?.remove();await render();alert('Video updated')}catch(e){alert(e.message)}
+  const btn=document.getElementById('editVideoSaveBtn'),prog=document.getElementById('editVideoProgress');if(btn)btn.disabled=true;if(prog){prog.style.display='block';prog.textContent='Saving changes…'}
+  try{
+    const v=videoById(id)||selected;const payload={title,description,category};
+    if(videoFile){
+      if(prog)prog.textContent='🎬 Uploading new video… 0%';
+      const cfg=await getCloudinaryConfig();const vr=await uploadEditCloudinaryFile(videoFile,cfg,'video',(loaded,total)=>{if(prog)prog.textContent=`🎬 Uploading new video… ${Math.floor((loaded/total)*100)}%`});
+      if(!vr?.secure_url)throw new Error('New video upload failed');payload.video_url=vr.secure_url;payload.cloudinary_public_id=vr.public_id||'';
+      const pv=document.getElementById('editVideoPreview');const duration=pv?.duration;if(Number.isFinite(duration)&&duration>0)payload.duration_seconds=Math.round(duration);
+    }
+    if(thumbFile){
+      if(prog)prog.textContent='🖼️ Uploading new thumbnail…';
+      const cfg=await getCloudinaryConfig();const tr=await uploadEditCloudinaryFile(thumbFile,cfg,'image');if(!tr?.secure_url)throw new Error('Thumbnail upload failed');payload.thumbnail_url=tr.secure_url;payload.cloudinary_thumbnail_public_id=tr.public_id||'';
+    }
+    if(prog)prog.textContent='💾 Updating video…';
+    let x=await api('/videos/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    videos=videos.map(v=>String(v.id)===String(id)?{...v,...x}:v);if(selected&&String(selected.id)===String(id))selected={...selected,...x};
+    document.getElementById('videoEditModal')?.remove();await render();alert('Video, thumbnail aur details successfully update ho gaye');
+  }catch(e){if(prog){prog.textContent='❌ '+(e.message||'Update failed')}alert(e.message||'Video update failed');if(btn)btn.disabled=false}
 }
 async function deleteVideo(id){if(!user)return auth();if(!confirm('Is video ko permanently delete karna hai?'))return;try{await api('/videos/'+id,{method:'DELETE'});videos=videos.filter(v=>String(v.id)!==String(id));if(selected&&String(selected.id)===String(id)){selected=null;go('home')}else{await render();alert('Video deleted')}}catch(e){alert(e.message)}}
 
@@ -703,6 +814,9 @@ function logout(){safeRemove('hyper_token');safeRemove('hyper_user');user=null;s
 document.querySelectorAll('.bottom [data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.tab));
 async function restoreRoute(){try{let r=savedRoute||{type:safeGet('hyper_tab','home')};if(r.type==='channel'&&r.username){await openChannel(r.username);return}if(r.type==='watch'&&r.id){let rid=String(r.id);selected=videos.find(v=>String(v.id)===rid);if(!selected){try{selected=await api('/videos/'+encodeURIComponent(rid)+'?fresh='+Date.now())}catch(e){console.warn('Restore watch fetch failed',e)}}if(selected){tab='watch';safeSet('hyper_watch_id',rid);await render();setTimeout(()=>{let p=document.getElementById('player');if(p){let pos=Math.max(0,Number(safeGet('hyper_pos_'+rid,safeGet('hyper_watch_pos','0')))||0);const apply=()=>{if(pos>0&&Number.isFinite(p.duration)&&pos<p.duration-1){try{p.currentTime=Math.min(pos,p.duration-0.5)}catch(e){}}};p.addEventListener('loadedmetadata',apply,{once:true});p.addEventListener('canplay',apply,{once:true});apply();}},150);setTimeout(loadComments,250);return}}if(r.type==='search'){q=r.q||q;try{searchResults=await api('/search?q='+encodeURIComponent(q))}catch(e){}tab='search';await render();return}if(r.type==='library'){tab='library';libraryMode=r.mode||libraryMode}else if(r.type==='home'&&r.category){tab='home';category=r.category}else if(['home','search','shorts','subs','library','create','settings','editChannel'].includes(r.type)){tab=r.type}safeSet('hyper_tab',tab);await render()}catch(e){console.error(e);await render()}}
 if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('message',e=>{if(e.data?.type==='HYPER_UPLOAD_DONE'){const id=e.data.id;const t=uploadTasks.find(x=>String(x.id)===String(id));if(t){removeBackgroundUpload(id);t.status='done';t.progress=100;t.message='Published successfully';t._live=false;t.background=false;persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(id),1800)}loadFeedOnly()}if(e.data?.type==='HYPER_OPEN_VIDEO'&&e.data.videoId){watch(Number(e.data.videoId))}});window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}))}
+document.addEventListener('visibilitychange',()=>{keepHyperPlaybackAlive()});
+document.addEventListener('enterpictureinpicture',()=>{window._hyperInPiP=true});
+document.addEventListener('leavepictureinpicture',()=>{window._hyperInPiP=false});
 window.addEventListener('pagehide',()=>{const p=document.getElementById('player');if(p&&selected){const pos=String(Math.floor(p.currentTime||0));safeSet('hyper_pos_'+selected.id,pos);safeSet('hyper_watch_pos',pos);safeSet('hyper_watch_id',String(selected.id));setRoute({type:'watch',id:String(selected.id)})}});
 window.addEventListener('beforeunload',()=>{const p=document.getElementById('player');if(p&&selected){const pos=String(Math.floor(p.currentTime||0));safeSet('hyper_pos_'+selected.id,pos);safeSet('hyper_watch_pos',pos);safeSet('hyper_watch_id',String(selected.id));}});
 window.addEventListener('pageshow',()=>{reconcileUploadQueue().catch(()=>{});refreshNotificationDot().catch(()=>{})});
