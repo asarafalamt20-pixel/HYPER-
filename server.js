@@ -5,7 +5,7 @@ const app=express(),PORT=process.env.PORT||10000,SECRET=process.env.JWT_SECRET||
 const cloudinaryConfigured=!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET);
 if(process.env.CLOUDINARY_CLOUD_NAME){cloudinary.config({cloud_name:process.env.CLOUDINARY_CLOUD_NAME,api_key:process.env.CLOUDINARY_API_KEY||'',api_secret:process.env.CLOUDINARY_API_SECRET||'',secure:true})}
 app.use(cors());app.use(express.json());
-app.get('/api/health',(req,res)=>res.json({ok:true,service:'HYPER',version:'2.3.9',cloudinaryConfigured:!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET),databaseConfigured:!!process.env.DATABASE_URL}));
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'HYPER',version:'2.4.0',cloudinaryConfigured:!!(process.env.CLOUDINARY_CLOUD_NAME&&process.env.CLOUDINARY_UPLOAD_PRESET),databaseConfigured:!!process.env.DATABASE_URL}));
 // Always fetch fresh feed/API data so newly published videos appear for every user/device.
 app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');next()});
 const defaultUploadDir=fs.existsSync('/var/data')?path.join('/var/data','hyper-uploads'):path.join(__dirname,'uploads');

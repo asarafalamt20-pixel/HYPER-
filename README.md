@@ -147,3 +147,10 @@ HYPER v2.3.2: AWS/S3 dependency removed. Use Cloudinary for permanent video uplo
 ## Faster uploads
 - Cloudinary uploads use 20 MiB resumable chunks instead of 4 MiB, reducing HTTP round-trips on large videos.
 - Failed chunks retry automatically and uploads can resume from the last committed chunk.
+
+## v2.4.0 Turbo upload
+- Videos up to 100 MB use a single direct Cloudinary upload to avoid unnecessary chunk round-trips.
+- Larger videos keep resumable 20 MiB chunk uploads.
+- Upload progress UI/localStorage updates are throttled on mobile so rendering/storage work does not slow the network transfer.
+- Upload card now shows transfer speed and a rough remaining-time estimate when available.
+- Cloudinary remains the direct upload destination; actual network speed still depends on the phone/network and Cloudinary connection.

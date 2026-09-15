@@ -372,17 +372,74 @@ async function getCloudinaryConfig(){const r=await api('/cloudinary/config');if(
 function cloudinaryChunkUpload(file,chunk,start,total,uploadId,config,onProgress){return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',`https://api.cloudinary.com/v1_1/${encodeURIComponent(config.cloud_name)}/video/upload`,true);xhr.setRequestHeader('X-Unique-Upload-Id',uploadId);xhr.setRequestHeader('Content-Range',`bytes ${start}-${start+chunk.size-1}/${total}`);xhr.timeout=600000;let timer=null;xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress?.(e.loaded,e.total)};xhr.onload=()=>{clearTimeout(timer);let d={};try{d=JSON.parse(xhr.responseText||'{}')}catch{}if(xhr.status>=200&&xhr.status<300)resolve(d);else reject(new Error(d.error?.message||d.message||`Cloudinary upload failed (${xhr.status})`))};xhr.onerror=()=>{clearTimeout(timer);reject(new Error('Cloudinary network error'))};xhr.ontimeout=()=>{clearTimeout(timer);reject(new Error('Cloudinary upload timed out; retrying chunk'))};xhr.onabort=()=>{clearTimeout(timer);reject(new Error('Upload aborted'))};const fd=new FormData();fd.append('file',chunk,file.name);fd.append('upload_preset',config.upload_preset);fd.append('resource_type','video');xhr.send(fd)})}
 async function cloudinarySimpleUpload(file,config,resourceType='image',onProgress){return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',`https://api.cloudinary.com/v1_1/${encodeURIComponent(config.cloud_name)}/${resourceType}/upload`,true);xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress?.(e.loaded,e.total)};xhr.onload=()=>{let d={};try{d=JSON.parse(xhr.responseText||'{}')}catch{}if(xhr.status>=200&&xhr.status<300)resolve(d);else reject(new Error(d.error?.message||`Cloudinary upload failed (${xhr.status})`))};xhr.onerror=()=>reject(new Error('Cloudinary network error'));const fd=new FormData();fd.append('file',file);fd.append('upload_preset',config.upload_preset);xhr.send(fd)})}
 async function uploadCloudinaryTask(q){
- if(uploadRunning.has(String(q.id)))return; const t=uploadTasks.find(x=>String(x.id)===String(q.id))||q; const file=q.file||q.fileBlob;if(!file||typeof file.slice!=='function'){t.status='error';t.message='Upload file not found. Please select the video again.';persistUploadTasks();renderUploadDock();return}
- uploadRunning.add(String(q.id)); try{t.status='uploading';t.background=true;t.message='Connecting to Cloudinary…';persistUploadTasks();renderUploadDock();
-  const cfg=(q.cloudinary_cloud_name&&q.cloudinary_upload_preset)?{cloud_name:q.cloudinary_cloud_name,upload_preset:q.cloudinary_upload_preset}:await getCloudinaryConfig(); const CHUNK=Number(q.chunk_size)||20*1024*1024,total=file.size; const totalChunks=Math.ceil(total/CHUNK); const uploadId=q.cloudinary_upload_id||('hyper-'+q.id+'-'+cryptoRandom()); let next=Math.max(0,Number(q.next_chunk)||0); let sent=next*CHUNK; t.progress=Math.max(Number(t.progress)||0,Math.floor(sent/total*95));
-  for(let i=next;i<totalChunks;i++){const start=i*CHUNK,blob=file.slice(start,Math.min(total,start+CHUNK));let attempt=0;let chunkResult=null;while(true){try{chunkResult=await cloudinaryChunkUpload(file,blob,start,total,uploadId,cfg,(loaded)=>{const live=Math.min(total,start+loaded);t.progress=Math.max(Number(t.progress)||0,Math.floor(live/total*95));t.message=`Uploading… ${t.progress}% • Cloudinary`;persistUploadTasks();renderUploadDock();notifyTransferToSW('HYPER Uploading',`${t.title||'Video'} • ${t.progress}%`,'hyper-upload-'+q.id)});if(chunkResult?.secure_url){q.cloudinary_secure_url=chunkResult.secure_url;q.cloudinary_url=chunkResult.url;q.cloudinary_public_id=chunkResult.public_id||''}if(chunkResult?.public_id)q.cloudinary_public_id=chunkResult.public_id;q.cloudinary_final_response=chunkResult;break}catch(e){if(++attempt>=5)throw e;await new Promise(r=>setTimeout(r,1200*Math.min(attempt,4)))}}
-   q.next_chunk=i+1;q.cloudinary_upload_id=uploadId; if(chunkResult?.secure_url){q.cloudinary_secure_url=chunkResult.secure_url;q.cloudinary_url=chunkResult.url;q.cloudinary_public_id=chunkResult.public_id||''} await updateUploadRecord(q.id,{progress:t.progress||0,committed_progress:t.progress||0,next_chunk:i+1,cloudinary_upload_id:uploadId,cloudinary_secure_url:q.cloudinary_secure_url||'',cloudinary_url:q.cloudinary_url||'',cloudinary_public_id:q.cloudinary_public_id||'',cloudinary_cloud_name:q.cloudinary_cloud_name||cfg.cloud_name,cloudinary_upload_preset:q.cloudinary_upload_preset||cfg.upload_preset,auth_token:q.auth_token||safeGet('hyper_token',''),state:'uploading'}); t.progress=Math.max(Number(t.progress)||0,Math.floor((Math.min(total,(i+1)*CHUNK))/total*95));await updateUploadRecord(q.id,{progress:t.progress,committed_progress:t.progress,next_chunk:i+1,cloudinary_upload_id:uploadId,cloudinary_secure_url:q.cloudinary_secure_url||'',cloudinary_url:q.cloudinary_url||'',cloudinary_public_id:q.cloudinary_public_id||'',state:'uploading'});persistUploadTasks();renderUploadDock();
-  }
-  const finalUrl=q.cloudinary_secure_url||q.cloudinary_url; if(!finalUrl){throw new Error('Cloudinary upload finished but final video URL was not returned. Please retry once.')}
-  let thumbUrl=null,thumbId=''; const thumb=q.thumbnail||q.thumbnailBlob;if(thumb){const tr=await cloudinarySimpleUpload(thumb,cfg,'image');thumbUrl=tr.secure_url||tr.url;thumbId=tr.public_id||''}
-  t.progress=98;t.message='Saving video…';persistUploadTasks();renderUploadDock();const data=await api('/videos/cloudinary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:q.title,description:q.description,type:q.type,category:q.category,duration_seconds:q.duration_seconds,original_language:q.original_language,language_tracks:q.language_tracks,subtitle_tracks:q.subtitle_tracks,upload_key:String(q.id),video_url:finalUrl,thumbnail_url:thumbUrl,cloudinary_public_id:q.cloudinary_public_id,cloudinary_thumbnail_public_id:thumbId})});
-  removeBackgroundUpload(q.id);t.status='done';t.progress=100;t.message='Published successfully';persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(q.id),1800);await loadFeedOnly();
- }catch(e){t.status='paused';t.background=true;t.message='Upload paused: '+(e?.message||'Cloudinary error')+' — tap Resume';persistUploadTasks();renderUploadDock();registerBackgroundSync()}finally{uploadRunning.delete(String(q.id))}}
+ if(uploadRunning.has(String(q.id)))return;
+ const t=uploadTasks.find(x=>String(x.id)===String(q.id))||q;
+ const file=q.file||q.fileBlob;
+ if(!file||typeof file.slice!=='function'){t.status='error';t.message='Upload file not found. Please select the video again.';persistUploadTasks();renderUploadDock();return}
+ uploadRunning.add(String(q.id));
+ let lastUi=0,lastPersist=0,lastBytes=0,lastSpeedStamp=Date.now(),speed=0;
+ const updateLive=(bytes,messagePrefix='Uploading…')=>{
+   const now=Date.now(), pct=Math.min(95,Math.floor((bytes/file.size)*95));
+   const dt=Math.max(1,now-lastSpeedStamp);
+   if(now-lastSpeedStamp>=800){speed=Math.max(0,(bytes-lastBytes)/(dt/1000));lastBytes=bytes;lastSpeedStamp=now}
+   const rate=formatTransferRate(speed);
+   const eta=speed>0?Math.max(0,(file.size-bytes)/speed):0;
+   const etaText=eta>0&&eta<86400?` • ${Math.ceil(eta/60)}m left`:'';
+   t.progress=Math.max(Number(t.progress)||0,pct);
+   t.message=`${messagePrefix} ${t.progress}% • Cloudinary${rate?` • ${rate}`:''}${etaText}`;
+   if(now-lastUi>=250||pct>=95){lastUi=now;renderUploadDock()}
+   if(now-lastPersist>=1000||pct>=95){lastPersist=now;persistUploadTasks()}
+ };
+ try{
+   t.status='uploading';t.background=true;t.message='Connecting to Cloudinary…';persistUploadTasks();renderUploadDock();
+   const cfg=(q.cloudinary_cloud_name&&q.cloudinary_upload_preset)?{cloud_name:q.cloudinary_cloud_name,upload_preset:q.cloudinary_upload_preset}:await getCloudinaryConfig();
+   const total=file.size;
+
+   // Cloudinary supports regular uploads up to 100 MB. For smaller videos, one direct
+   // request is faster than creating/resuming multiple chunks.
+   if(total<=100*1024*1024){
+     const result=await cloudinarySimpleUpload(file,cfg,'video',loaded=>updateLive(loaded,'Uploading…'));
+     q.cloudinary_secure_url=result.secure_url||'';q.cloudinary_url=result.url||'';q.cloudinary_public_id=result.public_id||'';q.cloudinary_final_response=result;
+   }else{
+     const CHUNK=Number(q.chunk_size)||20*1024*1024;
+     const totalChunks=Math.ceil(total/CHUNK);
+     const uploadId=q.cloudinary_upload_id||('hyper-'+q.id+'-'+cryptoRandom());
+     let next=Math.max(0,Number(q.next_chunk)||0);
+     let sent=Math.min(total,next*CHUNK);
+     updateLive(sent,'Resuming…');
+     for(let i=next;i<totalChunks;i++){
+       const start=i*CHUNK,blob=file.slice(start,Math.min(total,start+CHUNK));
+       let attempt=0,chunkResult=null;
+       while(true){
+         try{
+           chunkResult=await cloudinaryChunkUpload(file,blob,start,total,uploadId,cfg,loaded=>updateLive(Math.min(total,start+loaded)));
+           break;
+         }catch(e){
+           if(++attempt>=5)throw e;
+           await new Promise(r=>setTimeout(r,800*Math.min(attempt,4)));
+         }
+       }
+       if(chunkResult?.secure_url){q.cloudinary_secure_url=chunkResult.secure_url;q.cloudinary_url=chunkResult.url||'';q.cloudinary_public_id=chunkResult.public_id||''}
+       if(chunkResult?.public_id)q.cloudinary_public_id=chunkResult.public_id;
+       q.cloudinary_final_response=chunkResult;
+       q.next_chunk=i+1;q.cloudinary_upload_id=uploadId;
+       t.progress=Math.max(Number(t.progress)||0,Math.floor((Math.min(total,(i+1)*CHUNK)/total)*95));
+       await updateUploadRecord(q.id,{progress:t.progress,committed_progress:t.progress,next_chunk:i+1,cloudinary_upload_id:uploadId,cloudinary_secure_url:q.cloudinary_secure_url||'',cloudinary_url:q.cloudinary_url||'',cloudinary_public_id:q.cloudinary_public_id||'',cloudinary_cloud_name:q.cloudinary_cloud_name||cfg.cloud_name,cloudinary_upload_preset:q.cloudinary_upload_preset||cfg.upload_preset,auth_token:q.auth_token||safeGet('hyper_token',''),state:'uploading'});
+       persistUploadTasks();renderUploadDock();
+     }
+   }
+
+   const finalUrl=q.cloudinary_secure_url||q.cloudinary_url;
+   if(!finalUrl)throw new Error('Cloudinary upload finished but final video URL was not returned. Please retry once.');
+   let thumbUrl=null,thumbId='';
+   const thumb=q.thumbnail||q.thumbnailBlob;
+   if(thumb){const tr=await cloudinarySimpleUpload(thumb,cfg,'image');thumbUrl=tr.secure_url||tr.url;thumbId=tr.public_id||''}
+   t.progress=98;t.message='Saving video…';persistUploadTasks();renderUploadDock();
+   await api('/videos/cloudinary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:q.title,description:q.description,type:q.type,category:q.category,duration_seconds:q.duration_seconds,original_language:q.original_language,language_tracks:q.language_tracks,subtitle_tracks:q.subtitle_tracks,upload_key:String(q.id),video_url:finalUrl,thumbnail_url:thumbUrl,cloudinary_public_id:q.cloudinary_public_id,cloudinary_thumbnail_public_id:thumbId})});
+   removeBackgroundUpload(q.id);t.status='done';t.progress=100;t.message='Published successfully';persistUploadTasks();renderUploadDock();setTimeout(()=>removeUploadTask(q.id),1800);await loadFeedOnly();
+ }catch(e){t.status='paused';t.background=true;t.message='Upload paused: '+(e?.message||'Cloudinary error')+' — tap Resume';persistUploadTasks();renderUploadDock();registerBackgroundSync()}
+ finally{uploadRunning.delete(String(q.id))}
+}
 function cryptoRandom(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
 
 async function uploadQueuedTask(q){
