@@ -35,19 +35,6 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch .relatedRow .card{min-width:0!important;max-width:none!important;width:100%!important;scroll-snap-align:none;}
 @media(max-width:800px){.watch .relatedRow{grid-template-columns:1fr!important;}.watch .commentList{max-height:360px;}}
 
-/* HYPER v2.5.3: comments must stay completely inside the comment card */
-html,body{max-width:100%;overflow-x:hidden;}
-.page{max-width:100%;min-width:0;overflow-x:hidden;box-sizing:border-box;}
-.watch .commentBox{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;overflow:hidden;contain:layout paint;}
-.watch .commentBox *{max-width:100%;box-sizing:border-box;}
-.watch .commentComposer{display:flex;width:100%;min-width:0;max-width:100%;gap:8px;align-items:center;overflow:hidden;}
-.watch .commentComposer input{flex:1 1 auto;width:0;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;}
-.watch .commentComposer .primary{flex:0 0 auto;white-space:nowrap;}
-.watch .commentList{display:grid;width:100%;min-width:0;max-width:100%;max-height:420px;overflow-y:auto;overflow-x:hidden;padding:0 0 2px;margin:0;gap:8px;}
-.watch .commentItem{display:block;width:100%;min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden;overflow-wrap:anywhere;word-break:break-word;white-space:normal;}
-.watch .commentItem b,.watch .commentItem p{display:block;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal;}
-@media(max-width:600px){.watch .commentBox{margin-left:0;margin-right:0;padding:14px 12px;} .watch .commentComposer{gap:7px;} .watch .commentComposer input{font-size:14px;} .watch .commentComposer .primary{padding:9px 12px;}}
-
 /* HYPER v2.5.2: YouTube-style mobile feed + contained comments + clean titles */
 .homePage{overflow-x:hidden;min-width:0}
 .homeFeed{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:22px!important;overflow:visible!important}
@@ -77,6 +64,29 @@ html,body{max-width:100%;overflow-x:hidden;}
   .watch .commentList{max-height:420px}
   .watch .relatedRow{gap:14px!important}
 }
+
+/* v2.5.3: mobile YouTube-style watch layout fixes */
+html,body{max-width:100%;overflow-x:hidden}
+.page{width:100%;max-width:1200px;overflow-x:hidden}
+.watch{padding-left:max(12px,4%);padding-right:max(12px,4%)}
+.watch h1{width:100%;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;white-space:normal;line-height:1.18;font-size:clamp(23px,5.6vw,32px)}
+.watch .actions{width:100%;max-width:100%;display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:2px 0 7px;margin:7px 0;scrollbar-width:none}
+.watch .actions::-webkit-scrollbar{display:none}
+.watch .actions button{flex:0 0 auto;white-space:nowrap;max-width:none}
+.watch .channel{width:100%;max-width:100%;min-width:0;display:flex;flex-wrap:wrap;gap:10px;overflow:hidden}
+.watch .channel>div{min-width:0;flex:1 1 130px}
+.watch .channel>div b,.watch .channel>div p{overflow-wrap:anywhere;word-break:break-word}
+.watch .channel>button{flex:0 0 auto;margin-left:auto;max-width:145px;white-space:nowrap}
+.watch .commentBox{width:100%;max-width:100%;overflow:hidden}
+.watch .commentList{display:none;width:100%;max-width:100%;max-height:360px;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;padding-right:2px}
+.watch .commentBox.comments-open .commentList{display:grid}
+.watch .commentBox .commentComposer{width:100%;max-width:100%;box-sizing:border-box}
+.watch .commentBox .commentComposer input{min-width:0;width:auto;max-width:100%}
+.watch .commentBox .commentComposer button{flex:0 0 auto;white-space:nowrap}
+.watch .relatedTitle{margin-top:18px!important}
+.watch .relatedRow{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:14px!important;width:100%!important;max-width:100%!important;overflow:visible!important;padding:0!important}
+.watch .relatedRow .card{width:100%!important;min-width:0!important;max-width:none!important}
+@media(max-width:520px){.watch .channel>button{max-width:125px;padding:8px 11px}.watch .commentComposer{gap:7px}.watch .commentComposer button{padding:10px 13px}.watch .watchTools{width:100%;max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}.watch .watchTools::-webkit-scrollbar{display:none}.watch .watchTools>*{flex:0 0 auto;white-space:nowrap}}
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
@@ -155,7 +165,7 @@ function relatedVideos(){
 }
 function watchPage(){
   let u=selected?.username||'',subscribed=!!subscriptionState[u],rel=relatedVideos();
-  return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><button onclick="openNativePiP()">⧉ Mini Player</button><button onclick="enableBackgroundPlayback()">🔊 Background Play</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}<button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><div class="commentBox"><h2 style="margin:0 0 10px">Comments</h2>${user?`<div class="commentComposer"><input id="commentText" placeholder="Add a comment" maxlength="1000"><button class="primary" onclick="comment()">Comment</button></div>`:''}<div id="comments" class="commentList"><div class="commentEmpty">Loading comments...</div></div></div><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div></main>`
+  return `<main class="page watch"><button class="back" onclick="go('home')">← Back</button><div id="videoWrap" class="videoWrap">${window.miniVideo&&String(window.miniVideo.dataset.videoId)===String(selected.id)?'<div id="playerPlaceholder" style="aspect-ratio:16/9;background:#000;border-radius:16px"></div>':`<video id="player" controls playsinline preload="metadata" poster="${mediaUrl(selected.thumbnail_url||selected.thumbnail||'')}" src="${mediaUrl(selected.video_url)}"></video>`}<span class="videoOverlayHint">Tap ⛶ for fullscreen</span><div id="hyperAdOverlay"></div></div><div class="watchTools"><button onclick="toggleVideoFullscreen()">⛶ Fullscreen</button><button onclick="toggleVideoOrientation()">↔ Portrait / Landscape</button><button onclick="openNativePiP()">⧉ Mini Player</button><button onclick="enableBackgroundPlayback()">🔊 Background Play</button><select class="watchLanguage" onchange="setVideoLanguage(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="auto">🌐 Video Language</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="bho">भोजपुरी</option></select><select class="watchQuality" onchange="setPlaybackQuality(this.value)" style="border:0;border-radius:18px;padding:9px 13px;background:var(--soft);color:var(--text)"><option value="Auto" ${settingsState.videoQuality==='Auto'?'selected':''}>🎞️ Auto</option><option value="360p" ${settingsState.videoQuality==='360p'?'selected':''}>360p</option><option value="480p" ${settingsState.videoQuality==='480p'?'selected':''}>480p</option><option value="720p" ${settingsState.videoQuality==='720p'?'selected':''}>720p</option><option value="1080p" ${settingsState.videoQuality==='1080p'?'selected':''}>1080p</option></select></div><div id="playerError" class="notice"></div><h1>${escapeHtml(selected.title)}</h1><p id="watchViews" class="muted">${fmt(selected.views)} views • ${selected.category||'Video'}</p><div class="actions"><button id="likeBtn" data-like-video="${selected.id}" onclick="like(${selected.id})">👍 ${fmt(selected.likes)}</button><button onclick="save(${selected.id})">🔖 Save</button><button onclick="shareVideo()">↗ Share</button><button onclick="downloadVideo()">⬇️ Download</button>${isMine(selected)?`<button onclick="editVideo(${selected.id})">✏️ Edit Video</button><button onclick="deleteVideo(${selected.id})">🗑️ Delete Video</button>`:''}</div><div class="channel"><button onclick="openChannel('${escapeHtml(u)}')" style="border:0;background:none;padding:0;cursor:pointer">${avatarHtml(selected)}</button><div onclick="openChannel('${escapeHtml(u)}')" style="cursor:pointer"><b>${escapeHtml(selected.channel||'HYPER Creator')}</b><p class="muted" data-subscriber-count="${escapeHtml(u)}">${fmt(selected.subscriber_count||0)} subscribers</p></div>${user&&u&&user.username!==u?`<button data-subscribe-channel="${escapeHtml(u)}" class="${subscribed?'subscribed':'sub'}" onclick="subscribeChannel('${escapeHtml(u)}')">${subscribed?'Subscribed':'Subscribe'}</button>`:''}</div><div class="commentBox" id="commentBox" onclick="openComments(event)"><h2 style="margin:0 0 10px;cursor:pointer">Comments</h2>${user?`<div class="commentComposer"><input id="commentText" placeholder="Add a comment" maxlength="1000"><button class="primary" onclick="comment()">Comment</button></div>`:''}<div id="comments" class="commentList"><div class="commentEmpty">Loading comments...</div></div></div><h2 class="relatedTitle">Related videos</h2><div class="relatedRow">${rel.map(card).join('')||'<div class="empty">No related videos yet.</div>'}</div></main>`
 }
 const HYPER_FORCE_TEST_ADS=true;
 const HYPER_TEST_VAST_TAG='https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&correlator=';
@@ -393,6 +403,12 @@ async function libraryPage(){
 }
 function setRoute(r){savedRoute=r;safeSet('hyper_route',JSON.stringify(r));safeSet('hyper_tab',r.type||'home')}
 function lib(x){libraryMode=x;safeSet('hyper_library_mode',x);setRoute({type:'library',mode:x});render()};function go(x){tab=x;safeSet('hyper_tab',x);if(x==='home'||x==='shorts'||x==='subs'||x==='library'||x==='create'||x==='settings'||x==='support'||x==='editChannel')setRoute({type:x,mode:x==='library'?libraryMode:undefined});render()};function setType(x){uploadType=x==='short'?'short':'video';document.getElementById('typeVideoBtn')?.classList.toggle('selected',uploadType==='video');document.getElementById('typeShortBtn')?.classList.toggle('selected',uploadType==='short')}
+function openComments(e){
+  const box=document.getElementById('commentBox');
+  if(!box)return;
+  if(e && e.target && (e.target.closest('input')||e.target.closest('button')||e.target.closest('.commentItem'))) return;
+  box.classList.toggle('comments-open');
+}
 async function watch(id){
   if(window.miniVideo&&String(window.miniVideo.dataset.videoId)!==String(id)){try{window.miniVideo.pause()}catch(e){}window.miniVideo=null;document.getElementById('miniPlayer')?.remove()}
   let found=videos.find(v=>String(v.id)===String(id));
