@@ -235,7 +235,47 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 }
 
 
-/* HYPER v2.5.9: player is normal-flow; scrolling moves title/channel/related content normally. */
+/* HYPER v2.5.9: keep the playing video visible; NEVER convert it to a floating mini-player on scroll.
+   Everything below the player (title/channel/comments/related) scrolls normally. */
+@media (max-width:600px){
+  .watch .videoWrap{
+    position:sticky!important;
+    top:70px!important;
+    z-index:6!important;
+    background:#fff!important;
+    padding-top:0!important;
+    padding-bottom:8px!important;
+  }
+  .watch .videoWrap video{
+    position:relative!important;
+    z-index:51!important;
+  }
+  .watch .watchTools,
+  .watchTitle,
+  .watch h1,
+  .watch #watchViews,
+  .watch .commentBox,
+  .watch .relatedTitle,
+  .watch .relatedRow{
+    position:relative!important;
+    z-index:1!important;
+  }
+}
+/* Desktop/tablet: player remains visible while related/content scrolls below it. */
+@media (min-width:601px){
+  .watch .videoWrap{
+    position:sticky!important;
+    top:70px!important;
+    z-index:6!important;
+    background:#fff!important;
+  }
+}
+/* When comments are opened, keep Related videos out of the way until comments are closed. */
+.watch .commentBox.open ~ .relatedTitle,
+.watch .commentBox.open ~ .relatedRow{
+  display:none!important;
+}
+
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
@@ -1140,6 +1180,8 @@ window.addEventListener('pagehide',()=>{const p=document.getElementById('player'
 window.addEventListener('beforeunload',()=>{const p=document.getElementById('player');if(p&&selected){const pos=String(Math.floor(p.currentTime||0));safeSet('hyper_pos_'+selected.id,pos);safeSet('hyper_watch_pos',pos);safeSet('hyper_watch_id',String(selected.id));}});
 window.addEventListener('pageshow',()=>{reconcileUploadQueue().catch(()=>{});refreshNotificationDot().catch(()=>{})});
 setInterval(()=>{if(document.visibilityState==='visible')reconcileUploadQueue().catch(()=>{})},12000);
-// HYPER v2.5.9: scrolling must NOT convert the playing video into an automatic mini player.
+// HYPER v2.5.9: scrolling NEVER moves the player into the custom floating mini-player.
+// The player stays visible in its sticky position while content below it scrolls.
+window.addEventListener('scroll',()=>{}, {passive:true});
 load().then(()=>{getHyperAdsConfig().catch(()=>{});restoreRoute()});
 </script></body></html>
