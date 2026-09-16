@@ -1269,18 +1269,19 @@ async function startUpload(){
      t=document.getElementById('thumb')?.files?.[0],
      fingerprint=(f.name||'')+'|'+f.size+'|'+(f.lastModified||0),
      id=Date.now()+Math.random();
- let cfg;
- try{cfg=await getCloudinaryConfig()}catch(e){
-   return alert('Cloudinary upload is not configured on Render. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET first.')
+ let cfg=null,provider='server';
+ try{cfg=await getCloudinaryConfig();provider='cloudinary'}catch(e){
+   // Cloudinary is optional. Fall back to HYPER's resumable server upload so publishing
+   // still works when Cloudinary environment variables are missing or temporarily unavailable.
+   console.warn('Cloudinary unavailable; using resumable server storage:',e?.message||e)
  }
  const task={
    id,title,description:desc,type,category:cat,file:f,filename:f.name,mimetype:f.type||'video/mp4',
    thumbnail:t||null,thumbnailName:t?.name||'',progress:0,committedProgress:0,status:'waiting',
-   message:'Starting Cloudinary upload…',background:true,size:f.size,fingerprint,provider:'cloudinary',
-   // 20 MiB chunks reduce hundreds of HTTP round-trips on large videos while retaining resumable uploads.
-   chunk_size:20*1024*1024,next_chunk:0,cloudinary_upload_id:'hyper-'+id+'-'+cryptoRandom(),
-   cloudinary_cloud_name:cfg.cloud_name,cloudinary_upload_preset:cfg.upload_preset,
-   auth_token:safeGet('hyper_token',''),
+   message:provider==='cloudinary'?'Starting Cloudinary upload…':'Starting resumable upload…',background:true,size:f.size,fingerprint,provider,
+   chunk_size:provider==='cloudinary'?20*1024*1024:8*1024*1024,next_chunk:0,cloudinary_upload_id:'hyper-'+id+'-'+cryptoRandom(),
+   cloudinary_cloud_name:cfg?.cloud_name||'',cloudinary_upload_preset:cfg?.upload_preset||'',
+   upload_id:String(id),auth_token:safeGet('hyper_token',''),
    duration_seconds:durationSeconds,original_language:lang,language_tracks:'{}',subtitle_tracks:'{}',state:'waiting'
  };
  uploadTasks=uploadTasks.filter(x=>!(x.fingerprint===fingerprint&&['paused','error','done'].includes(x.status)));

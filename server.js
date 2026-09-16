@@ -10,6 +10,9 @@ app.get('/api/health',(req,res)=>res.json({ok:true,service:'HYPER',version:'2.4.
 app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');next()});
 const defaultUploadDir=fs.existsSync('/var/data')?path.join('/var/data','hyper-uploads'):path.join(__dirname,'uploads');
 const dir=process.env.HYPER_UPLOAD_DIR||defaultUploadDir;
+// Persistent-disk uploads are the fallback when Cloudinary is not configured.
+// Render mounts /var/data when the service disk is enabled.
+const storageConfigured=true;
 fs.mkdirSync(dir,{recursive:true});
 const upload=multer({storage:multer.diskStorage({destination:dir,filename:(r,f,cb)=>cb(null,Date.now()+'-'+f.originalname.replace(/[^a-zA-Z0-9._-]/g,'_'))}),limits:{fileSize:250*1024*1024}});
 app.use('/uploads',express.static(dir));
