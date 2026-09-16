@@ -465,17 +465,7 @@ async function openChannel(username){if(!username)return;channelUser=null;tab='c
 function channelVideos(){if(!channelUser)return [];return videos.filter(v=>(v.username||'').toLowerCase()===(channelUser.username||'').toLowerCase())}
 async function main(){let list=filtered();
 if(tab==='search')return searchPage();
-if(tab==='home'){const shorts=list.filter(v=>v.type==='short');const feed=list.filter(v=>v.type!=='short');return `<main class="page homePage"><section class="homeAd"><div class="homeAdBox"><b><script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7046771329933999"  
-     crossorigin="anonymous"></script>  <!-- Hyper Banner -->  <ins class="adsbygoogle"  
-style="display:block"  
-data-ad-client="ca-pub-7046771329933999"  
-data-ad-slot="6924313568"  
-data-ad-format="auto"  
-data-full-width-responsive="true"></ins>
-
-<script>  
-     (adsbygoogle = window.adsbygoogle || []).push({});  
-</script></b><span>Sponsored • HYPER</span></div></section>${shorts.length?`<div class="homeSectionTitle"><h2>Shorts</h2><button class="homeMore" onclick="go('shorts')">View all</button></div><div class="homeShortGrid">${shorts.slice(0,6).map(short).join('')}</div>`:''}<div class="homeSectionTitle"><h2>${category==='All'?'For You':category}</h2></div><div class="homeFeed">${feed.map(card).join('')||'<div class="empty">No videos found in this category.</div>'}</div></main>`;}
+if(tab==='home'){const shorts=list.filter(v=>v.type==='short');const feed=list.filter(v=>v.type!=='short');return `<main class="page homePage"><section class="homeAd"><div class="homeAdBox"><b>Advertisemet</b><span>Sponsored • HYPER</span></div></section>${shorts.length?`<div class="homeSectionTitle"><h2>Shorts</h2><button class="homeMore" onclick="go('shorts')">View all</button></div><div class="homeShortGrid">${shorts.slice(0,6).map(short).join('')}</div>`:''}<div class="homeSectionTitle"><h2>${category==='All'?'For You':category}</h2></div><div class="homeFeed">${feed.map(card).join('')||'<div class="empty">No videos found in this category.</div>'}</div></main>`;}
 if(tab==='shorts')return `<main class="page"><h1>Shorts</h1><div class="shortgrid">${videos.filter(v=>v.type==='short').map(v=>`<div class="shortbig" onclick="watch(${v.id})"><img src="${v.thumbnail_url||v.thumbnail}"><p>♥ ${fmt(v.likes)}<br>${escapeHtml(v.title)}</p></div>`).join('')}</div></main>`;
 if(tab==='watch')return watchPage();if(tab==='create')return createPage();if(tab==='subs')return subsPage();if(tab==='settings')return settingsPage();if(tab==='support')return supportPage();if(tab==='editChannel')return editChannelPage();if(tab==='channel')return channelPage();return await libraryPage()}
 
