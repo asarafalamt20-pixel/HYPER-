@@ -180,7 +180,7 @@ Fixes mobile "request entity too large" when saving a profile picture. Profile i
 - Read more expands the complete title and description without hiding the rest of the watch page.
 - Ad overlay is confined to the fixed player and related videos remain clickable.
 
-## v2.5.30 fixes
+## v2.5.31 fixes
 - Restored the missing `loadComments()` implementation so comments can load without `loadComments is not defined` errors.
 - Comment add/load/edit/delete UI now has a local fallback for deployments where comment mutation endpoints return 404.
 - Comment action menu remains usable even when the comment list is scrollable/clipped.

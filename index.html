@@ -298,8 +298,7 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watchTitle{margin-bottom:6px;}
 
 
-/* When the full video description is open, keep comments and related videos hidden. */
-/* Read more expands title/description without hiding the rest of the watch page. */
+/* Read more expands title/description while keeping Like, Channel, Comments and Related videos visible. */
 .watchDescription a{color:var(--green);text-decoration:underline;word-break:break-word;}
 
 
@@ -1417,3 +1416,17 @@ window.addEventListener('pageshow',()=>{reconcileUploadQueue().catch(()=>{});ref
 setInterval(()=>{if(document.visibilityState==='visible')reconcileUploadQueue().catch(()=>{})},12000);
 load().then(()=>{getHyperAdsConfig().catch(()=>{});restoreRoute()});
 </script></body></html>
+
+<style>
+/* HYPER v2.5.31: expanded description keeps all watch controls/content visible */
+.watch.description-open .actions,
+.watch.description-open .channel,
+.watch.description-open .commentBox,
+.watch.description-open .relatedTitle,
+.watch.description-open .relatedRow { display: block !important; visibility: visible !important; }
+.watch.description-open .actions { display:flex !important; }
+.watch.description-open .channel { display:flex !important; }
+.watch.description-open .commentBox { display:block !important; }
+.watch.description-open .relatedRow { display:grid !important; }
+.watch.description-open .watchDescription { max-height:none !important; height:auto !important; overflow:visible !important; }
+</style>
