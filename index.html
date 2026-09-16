@@ -250,7 +250,7 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 @media (max-width:600px){
   .watch .videoWrap{
     position:sticky!important;
-    top:70px!important;
+    top:128px!important;
     z-index:6!important;
     background:#fff!important;
     padding-top:0!important;
@@ -303,6 +303,12 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch.description-open .relatedRow{display:none!important;}
 .watchDescription a{color:var(--green);text-decoration:underline;word-break:break-word;}
 
+
+/* v2.5.25: full title + full description when Read more is open */
+.watch.description-open .watchTitleRow{min-height:0!important;}
+.watch.description-open .watchTitleRow .watchTitleText{display:block!important;-webkit-line-clamp:unset!important;overflow:visible!important;max-height:none!important;}
+.watch.description-open .watchTitleRow .readMoreBtn{background:var(--card)!important;}
+
 /* HYPER v2.5.19: KEEP THE FIXED OVERLAY. The player remains visible while the content below it scrolls.
    A spacer reserves the player's exact 16:9 area so title/channel/comments are never covered by the overlay. */
 .watch .videoWrap{
@@ -352,6 +358,9 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch .commentItem{z-index:1!important;}
 .watch .commentMenuWrap{z-index:300!important;}
 .watch .commentMenu{z-index:999!important;min-width:150px!important;}
+#hyperAdOverlay{position:absolute!important;inset:0!important;z-index:52!important;pointer-events:none!important;}
+#hyperAdOverlay #hyperImaContainer{pointer-events:auto!important;}
+#hyperAdOverlay .hyperAd{pointer-events:auto!important;}
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
@@ -575,66 +584,36 @@ async function watchWithPreRoll(id, ev){
   try{ev?.stopPropagation?.()}catch(e){}
   const target=videoById(id)||videos.find(x=>String(x.id)===String(id));
   if(!target)return;
-  // Short videos keep their direct-play behavior.
-  if(target.type==='short'){await watch(id);return;}
-  const old=currentHyperPlayer();
-  try{old?.pause?.()}catch(e){}
-  // The tap on the Home/Related card is the user gesture: initialize IMA now,
-  // then open the selected video automatically after the ad finishes/skips.
-  const cfg=HYPER_FORCE_TEST_ADS?{enabled:true,ad_tag_url:HYPER_TEST_VAST_TAG,test:true}:hyperAdsConfig;
-  if(!cfg?.enabled||!cfg?.ad_tag_url||!window.google?.ima){
-    await watch(id);
-    setTimeout(()=>document.getElementById('player')?.play?.().catch?.(()=>{}),350);
-    return;
-  }
-  const overlay=document.createElement('div');
-  overlay.id='hyperPreRollOverlay';
-  overlay.style.cssText='position:fixed;inset:70px 0 70px 0;background:rgba(0,0,0,.18);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding-top:24px;pointer-events:none;';
-  const wrap=document.createElement('div');
-  wrap.style.cssText='position:relative;width:min(100vw,900px);aspect-ratio:16/9;height:auto;max-height:56.25vw;background:#000;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px #0008;pointer-events:auto;';
-  // Only the ad player captures touches; the transparent area must let Home/Related cards receive clicks.
-  const av=document.createElement('video');
-  av.id='hyperPreRollVideo';av.setAttribute('playsinline','');av.setAttribute('webkit-playsinline','');
-  av.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';
-  wrap.appendChild(av);overlay.appendChild(wrap);document.body.appendChild(overlay);
-  let finished=false,loader=null,manager=null,display=null;
-  const closeAndOpen=async()=>{
-    if(finished)return; finished=true;
-    try{manager?.destroy?.()}catch(e){} try{display?.destroy?.()}catch(e){}
-    overlay.remove();
-    await watch(id);
-    setTimeout(()=>{
-      const v=document.getElementById('player');
-      if(v)v.play().catch(()=>{ showPlayWithAdButton(); });
-    },350);
-  };
-  try{
-    display=new google.ima.AdDisplayContainer(wrap,av);
-    // This call is intentionally made directly from the card tap.
-    display.initialize();
-    loader=new google.ima.AdsLoader(display);
-    loader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,e=>{
-      try{
-        manager=e.getAdsManager(av);
-        manager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED,closeAndOpen);
-        manager.addEventListener(google.ima.AdEvent.Type.CONTENT_RESUME_REQUESTED,closeAndOpen);
-        manager.addEventListener(google.ima.AdEvent.Type.SKIPPED,closeAndOpen);
-        manager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,closeAndOpen);
-        manager.init(Math.max(320,wrap.clientWidth),Math.max(180,wrap.clientHeight),google.ima.ViewMode.NORMAL);
-        manager.start();
-      }catch(err){closeAndOpen();}
-    });
-    loader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR,closeAndOpen);
-    const req=new google.ima.AdsRequest();
-    req.adTagUrl=hyperAdTagWithCorrelator(cfg.ad_tag_url);
-    req.linearAdSlotWidth=Math.max(320,wrap.clientWidth);
-    req.linearAdSlotHeight=Math.max(180,wrap.clientHeight);
-    req.nonLinearAdSlotWidth=Math.max(320,wrap.clientWidth);
-    req.nonLinearAdSlotHeight=90;
-    req.setAdWillAutoPlay?.(true);req.setAdWillPlayMuted?.(false);
-    loader.requestAds(req);
-    setTimeout(()=>closeAndOpen(),15000);
-  }catch(e){closeAndOpen();}
+  // Open the normal watch interface FIRST. The pre-roll is rendered inside
+  // that same player instead of as a full-page overlay.
+  await watch(id);
+  if(target.type==='short')return;
+  setTimeout(async()=>{
+    const v=document.getElementById('player');
+    if(!v)return;
+    try{v.pause()}catch(e){}
+    // Keep the ad inside #hyperAdOverlay, which lives inside the fixed player.
+    // IMA is attempted here; if the browser blocks the delayed gesture, fall
+    // back to HYPER's in-player demo ad rather than blocking the page.
+    try{
+      hyperAdShownThisPlay=false;
+      const ok=await prepareHyperIMA(v);
+      if(ok){
+        hyperAdShownThisPlay=true;
+        const shown=await requestHyperAd(v);
+        if(!hyperAdInFlight && !shown) {
+          showHyperAd('pre');
+        }
+      }else{
+        showHyperAd('pre');
+      }
+      if(!hyperAdInFlight && !document.getElementById('hyperAdOverlay')?.textContent?.trim())v.play().catch(()=>{});
+    }catch(e){
+      clearHyperAdOverlay();
+      hyperAdInFlight=false;
+      showHyperAd('pre');
+    }
+  },120);
 }
 function currentHyperPlayer(){return document.getElementById('player')||window.miniVideo||null}
 async function openNativePiP(){
@@ -821,48 +800,76 @@ function commentCanManage(c){
 function commentMenu(c){
   if(!c?.id)return '';
   const m=commentCanManage(c);
-  const canEdit=m.mine;
-  const canDelete=m.mine;
-  return `<div class="commentMenuWrap"><button class="commentMenuBtn" type="button" aria-label="Comment options" onclick="event.stopPropagation();toggleCommentMenu(${Number(c.id)})">⋮</button><div id="commentMenu-${Number(c.id)}" class="commentMenu" hidden>${canEdit?`<button onclick="editComment(${Number(c.id)});event.stopPropagation()">✏️ Edit</button>`:''}${canDelete?`<button onclick="deleteComment(${Number(c.id)});event.stopPropagation()">🗑️ Delete</button>`:''}<button onclick="reportComment(${Number(c.id)});event.stopPropagation()">🚩 Report</button></div></div>`;
+  // The author of a comment gets ONLY Edit/Delete. Everyone else gets ONLY Report.
+  const items=m.mine
+    ? `<button onclick="editComment(${Number(c.id)});event.stopPropagation()">✏️ Edit</button><button onclick="deleteComment(${Number(c.id)});event.stopPropagation()">🗑️ Delete</button>`
+    : `<button onclick="reportComment(${Number(c.id)});event.stopPropagation()">🚩 Report</button>`;
+  return `<div class="commentMenuWrap"><button class="commentMenuBtn" type="button" aria-label="Comment options" onclick="event.stopPropagation();toggleCommentMenu(${Number(c.id)},this)">⋮</button><div id="commentMenu-${Number(c.id)}" class="commentMenu" hidden>${items}</div></div>`;
 }
-function toggleCommentMenu(id){document.querySelectorAll('.commentMenu').forEach(x=>{if(x.id!==`commentMenu-${id}`)x.hidden=true});const el=document.getElementById(`commentMenu-${id}`);if(el)el.hidden=!el.hidden}
+function toggleCommentMenu(id,anchor){
+  document.querySelectorAll('.commentMenu').forEach(x=>{if(x.id!==`commentMenu-${id}`)x.hidden=true});
+  const el=document.getElementById(`commentMenu-${id}`); if(!el)return;
+  const opening=el.hidden; el.hidden=!opening;
+  if(opening){
+    const r=anchor?.getBoundingClientRect?.();
+    if(r){
+      el.style.position='fixed';
+      el.style.right='auto';
+      el.style.left=Math.max(8,Math.min(window.innerWidth-el.offsetWidth-8,r.right-el.offsetWidth))+'px';
+      el.style.top=Math.max(8,Math.min(window.innerHeight-el.offsetHeight-8,r.bottom+6))+'px';
+    }
+  }
+}
 document.addEventListener('click',()=>document.querySelectorAll('.commentMenu').forEach(x=>x.hidden=true));
 async function commentApi(id,method,body){
   const headers=body?{'Content-Type':'application/json'}:undefined;
-  let firstErr=null;
-  for(const path of ['/comments/'+id, '/comments/'+id+'/report', '/videos/'+selected.id+'/comments/'+id]){
+  // Try the common REST shapes, but never send PUT/DELETE to the report route.
+  const paths=method==='POST'?['/comments/'+id+'/report']:[
+    '/videos/'+selected.id+'/comments/'+id,
+    '/comments/'+id
+  ];
+  let last=null;
+  for(const path of paths){
     try{return await api(path,{method,headers,body:body?JSON.stringify(body):undefined})}
-    catch(e){firstErr=e;if(e?.message&&!/404|not found/i.test(e.message))break;}
+    catch(e){last=e;}
   }
-  throw firstErr||new Error('Comment action failed');
+  throw last||new Error('Comment action failed');
 }
+function localCommentStore(){return safeJSON(safeGet('hyper_local_comments','{}'),{});}
+function saveLocalCommentStore(x){safeSet('hyper_local_comments',JSON.stringify(x));}
+function localCommentMine(c){return !!commentCanManage(c).mine;}
 async function editComment(id){
-  const c=(window._loadedComments||[]).find(x=>String(x.id)===String(id)); if(!c)return;
+  const c=(window._loadedComments||[]).find(x=>String(x.id)===String(id)); if(!c||!localCommentMine(c))return;
   const text=prompt('Edit comment',c.text||''); if(text===null)return; const clean=text.trim(); if(!clean)return;
-  try{await commentApi(id,'PUT',{text:clean});await loadComments()}catch(e){alert(e.message)}
+  try{await commentApi(id,'PUT',{text:clean});await loadComments();return}catch(e){
+    if(!/404|not found/i.test(e.message||'')){alert(e.message);return;}
+  }
+  const store=localCommentStore(); store[String(selected.id)]=store[String(selected.id)]||[];
+  const x=store[String(selected.id)].find(v=>String(v.id)===String(id));
+  if(x)x.text=clean; else c.text=clean;
+  saveLocalCommentStore(store); await loadComments();
 }
 async function deleteComment(id){
+  const c=(window._loadedComments||[]).find(x=>String(x.id)===String(id)); if(!c||!localCommentMine(c))return;
   if(!confirm('Delete this comment?'))return;
-  try{await commentApi(id,'DELETE');await loadComments()}catch(e){alert(e.message)}
+  try{await commentApi(id,'DELETE');await loadComments();return}catch(e){
+    if(!/404|not found/i.test(e.message||'')){alert(e.message);return;}
+  }
+  const store=localCommentStore(); store[String(selected.id)]=(store[String(selected.id)]||[]).filter(v=>String(v.id)!==String(id));
+  saveLocalCommentStore(store); await loadComments();
 }
 async function reportComment(id){
   if(!user)return auth();
+  const c=(window._loadedComments||[]).find(x=>String(x.id)===String(id)); if(c&&localCommentMine(c))return;
   const reason=prompt('Report reason (optional):','Inappropriate content'); if(reason===null)return;
   const body={reason:reason.trim()||'Reported by user'};
-  try{
-    await api('/comments/'+id+'/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    alert('Comment reported');
-  }catch(e){
-    // Keep the UI usable if the deployed backend has not added the report endpoint yet.
-    // Do not show the confusing browser 404 dialog; mark the report on this device instead.
-    if(/404|not found/i.test(e.message||'')){
-      const key='hyper_reported_comments'; const arr=safeJSON(safeGet(key,'[]'),[]);
-      if(!arr.includes(String(id)))arr.push(String(id)); safeSet(key,JSON.stringify(arr));
-      alert('Comment reported');
-    }else alert(e.message);
+  try{await commentApi(id,'POST',body);alert('Comment reported');}
+  catch(e){
+    if(/404|not found/i.test(e.message||'')){const key='hyper_reported_comments';const arr=safeJSON(safeGet(key,'[]'),[]);if(!arr.includes(String(id)))arr.push(String(id));safeSet(key,JSON.stringify(arr));alert('Comment reported');}
+    else alert(e.message);
   }
 }
-async function loadComments(){if(!selected)return;try{let d=await api('/videos/'+selected.id+'/comments');window._loadedComments=Array.isArray(d)?d:[];const box=document.getElementById('comments');const count=document.getElementById('commentCount');if(count)count.textContent=Array.isArray(d)?` ${d.length}`:'';if(!box)return;box.innerHTML=d.length?d.map(c=>`<div class="commentItem"><div class="commentItemHead"><b>${escapeHtml(c.display_name||'User')}</b>${commentMenu(c)}</div><p>${escapeHtml(c.text)}</p></div>`).join(''):'<div class="commentEmpty">No comments yet.</div>'}catch{window._loadedComments=[];if(document.getElementById('commentCount'))document.getElementById('commentCount').textContent='';if(document.getElementById('comments'))document.getElementById('comments').innerHTML='<div class="commentEmpty">Comments available after database connection.</div>'}}
+async function loadComments(){if(!selected)return;try{let d=await api('/videos/'+selected.id+'/comments');d=Array.isArray(d)?d:[];const store=localCommentStore();const local=Array.isArray(store[String(selected.id)])?store[String(selected.id)]:[];const ids=new Set(d.map(x=>String(x.id)));local.forEach(x=>{if(!ids.has(String(x.id)))d.push(x)});window._loadedComments=d;const box=document.getElementById('comments');const count=document.getElementById('commentCount');if(count)count.textContent=` ${d.length}`;if(!box)return;box.innerHTML=d.length?d.map(c=>`<div class="commentItem"><div class="commentItemHead"><b>${escapeHtml(c.display_name||c.username||'User')}</b>${commentMenu(c)}</div><p>${escapeHtml(c.text)}</p></div>`).join(''):'<div class="commentEmpty">No comments yet.</div>'}catch{const store=localCommentStore();const d=Array.isArray(store[String(selected.id)])?store[String(selected.id)]:[];window._loadedComments=d;const box=document.getElementById('comments');if(document.getElementById('commentCount'))document.getElementById('commentCount').textContent=d.length?` ${d.length}`:'';if(box)box.innerHTML=d.length?d.map(c=>`<div class="commentItem"><div class="commentItemHead"><b>${escapeHtml(c.display_name||c.username||'User')}</b>${commentMenu(c)}</div><p>${escapeHtml(c.text)}</p></div>`).join(''):'<div class="commentEmpty">Comments available after database connection.</div>'}}
 async function comment(){let el=document.getElementById('commentText'),text=el?.value.trim();if(!text)return;if(!user)return auth();try{await api('/videos/'+selected.id+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});el.value='';loadComments()}catch(e){alert(e.message)}}
 async function like(id){
   if(!user)return auth();
