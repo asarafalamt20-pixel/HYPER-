@@ -187,3 +187,11 @@ Fixes mobile "request entity too large" when saving a profile picture. Profile i
 - Expanded video details show the full title and full description.
 - In-player advertisement is kept inside the video interface; closing/skipping the demo ad resumes playback.
 - Related-video cards continue to use the same watch interface and pre-roll ad flow.
+
+
+## HYPER v2.5.32 merged build
+- Keeps the v2.5.31 description/watch, comments, ads and interface fixes.
+- Restores the v2.4.3 backend/service-worker files for deployment completeness.
+- Main HYPER app theme updated to professional navy/blue/cyan/violet branding; no HYPER text inside the icon.
+- Description-open watch page keeps Like, Save, Share, Download, Channel, Comments and Related videos visible.
+- Comments loader is explicitly exposed globally to prevent `loadComments is not defined` from inline UI handlers.
