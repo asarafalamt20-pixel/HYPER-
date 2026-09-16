@@ -170,3 +170,12 @@ Fixes mobile "request entity too large" when saving a profile picture. Profile i
 - Comment action menus are fixed-position so they remain fully visible even when overlapping another comment.
 - Pre-roll overlay no longer blocks taps on other Home/Related videos; only the ad itself captures pointer input.
 - Starting another video cancels the previous pre-roll and opens the newly selected video flow.
+
+
+## v2.5.29 merged fixes
+- Preserved the full v2.5.26 watch/in-player/ad, upload, library, channel, settings, and Studio-compatible files.
+- Fixed comment menu clipping by rendering actions in a body-level fixed menu.
+- Comment author: Edit/Delete only; other users: Report only.
+- 404 comment API failures fall back locally without exposing a 404 dialog.
+- Read more expands the complete title and description without hiding the rest of the watch page.
+- Ad overlay is confined to the fixed player and related videos remain clickable.
