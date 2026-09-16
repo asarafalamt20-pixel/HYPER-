@@ -179,3 +179,11 @@ Fixes mobile "request entity too large" when saving a profile picture. Profile i
 - 404 comment API failures fall back locally without exposing a 404 dialog.
 - Read more expands the complete title and description without hiding the rest of the watch page.
 - Ad overlay is confined to the fixed player and related videos remain clickable.
+
+## v2.5.30 fixes
+- Restored the missing `loadComments()` implementation so comments can load without `loadComments is not defined` errors.
+- Comment add/load/edit/delete UI now has a local fallback for deployments where comment mutation endpoints return 404.
+- Comment action menu remains usable even when the comment list is scrollable/clipped.
+- Expanded video details show the full title and full description.
+- In-player advertisement is kept inside the video interface; closing/skipping the demo ad resumes playback.
+- Related-video cards continue to use the same watch interface and pre-roll ad flow.
