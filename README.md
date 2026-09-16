@@ -157,3 +157,9 @@ HYPER v2.3.2: AWS/S3 dependency removed. Use Cloudinary for permanent video uplo
 # HYPER v2.4.6 – Profile Upload Fix
 
 Fixes mobile "request entity too large" when saving a profile picture. Profile images are resized to 256px and compressed to a small JPEG before the profile JSON request.
+
+## HYPER v2.5.9 player behavior
+- The playing video remains visible in its sticky position while the title, channel, comments and related videos scroll below it.
+- Scrolling never moves the playing video into the custom floating mini-player.
+- Opening the Comments box hides Related videos; closing Comments shows Related videos again.
+- The Mini Player button remains available for manual use.

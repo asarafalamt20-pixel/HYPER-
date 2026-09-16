@@ -74,6 +74,16 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch .channel>div{min-width:0;flex:1;}
 .watch .channel>div b{display:block;overflow-wrap:anywhere;word-break:break-word;}
 .watch .channel>button:last-child{margin-left:auto;flex:none;white-space:nowrap;}
+.commentItem{position:relative!important;}
+.commentItemHead{display:flex;align-items:center;gap:8px;min-width:0;}
+.commentItemHead>b{flex:1;min-width:0;}
+.commentMenuWrap{position:relative;flex:none;margin-left:auto;}
+.commentMenuBtn{border:0!important;background:transparent!important;color:var(--text)!important;font-size:22px!important;padding:2px 8px!important;border-radius:50%!important;}
+.commentMenuBtn:hover{background:var(--soft)!important;}
+.commentMenu{position:absolute;right:0;top:34px;z-index:200;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px #0003;min-width:130px;padding:5px;overflow:hidden;}
+.commentMenu[hidden]{display:none!important;}
+.commentMenu button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:10px 12px;border-radius:8px;}
+.commentMenu button:hover{background:var(--soft);}
 .commentBox{padding:0!important;margin:16px 0!important;overflow:hidden!important;}
 .commentHeader{display:flex;align-items:center;gap:8px;width:100%;padding:16px 18px;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer;}
 .commentHeader h2{margin:0!important;flex:1;font-size:21px;}
@@ -293,7 +303,7 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch.description-open .relatedRow{display:none!important;}
 .watchDescription a{color:var(--green);text-decoration:underline;word-break:break-word;}
 
-/* HYPER v2.5.16: player stays visible while page content scrolls. */
+/* HYPER v2.5.17: player is genuinely pinned during page scroll. */
 .watch .videoWrap{
   position:sticky!important;
   top:70px!important;
@@ -301,7 +311,21 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
   background:var(--card)!important;
   align-self:flex-start!important;
 }
+.watch .videoWrap.player-fixed{
+  position:fixed!important;
+  top:70px!important;
+  left:12px;
+  width:calc(100% - 24px);
+  height:auto;
+  z-index:100!important;
+  margin:0!important;
+  padding:0 0 8px!important;
+  background:var(--card)!important;
+  box-shadow:0 4px 14px rgba(0,0,0,.10);
+}
+.watch .videoWrap.player-fixed video{width:100%!important;height:auto!important;aspect-ratio:16/9!important;}
 .watch .videoWrap video{position:relative!important;z-index:51!important;display:block!important;width:100%!important;height:auto!important;aspect-ratio:16/9!important;object-fit:contain!important;}
+.watch.player-is-pinned{padding-top:0!important;}
 
 /* HYPER v2.5.14: description-open state hides all lower metadata/actions too. */
 .watch.description-open .actions,
@@ -760,7 +784,43 @@ async function countView(id){
   if(window._viewCounted)return;window._viewCounted=true;
   try{let r=await api('/videos/'+id+'/view',{method:'POST'});let v=videos.find(x=>String(x.id)===String(id));if(v)v.views=r.views;if(selected&&String(selected.id)===String(id))selected.views=r.views;let e=document.getElementById('watchViews');if(e)e.textContent=fmt(r.views)+' views • '+(selected.category||'Video')}catch(e){window._viewCounted=false}
 }
-async function loadComments(){if(!selected)return;try{let d=await api('/videos/'+selected.id+'/comments');const box=document.getElementById('comments');const count=document.getElementById('commentCount');if(count)count.textContent=Array.isArray(d)?` ${d.length}`:'';if(!box)return;box.innerHTML=d.length?d.map(c=>`<div class="commentItem"><b>${escapeHtml(c.display_name||'User')}</b><p>${escapeHtml(c.text)}</p></div>`).join(''):'<div class="commentEmpty">No comments yet.</div>'}catch{if(document.getElementById('commentCount'))document.getElementById('commentCount').textContent='';if(document.getElementById('comments'))document.getElementById('comments').innerHTML='<div class="commentEmpty">Comments available after database connection.</div>'}}
+function commentCanManage(c){
+  const cid=String(c.user_id??c.author_id??c.owner_id??'');
+  const uid=String(user?.id??user?.user_id??'');
+  const uname=String(c.username??c.user_username??'').toLowerCase();
+  const myname=String(user?.username??'').toLowerCase();
+  const mine=!!user && ((cid&&uid&&cid===uid)||(uname&&myname&&uname===myname));
+  const videoOwner=!!user && selected && String(selected.user_id??selected.owner_id??selected.creator_id??'')===String(user.id??user.user_id??'');
+  return {mine,videoOwner};
+}
+function commentMenu(c){
+  if(!c?.id)return '';
+  const m=commentCanManage(c);
+  const canEdit=m.mine;
+  const canDelete=m.mine||m.videoOwner;
+  return `<div class="commentMenuWrap"><button class="commentMenuBtn" type="button" aria-label="Comment options" onclick="event.stopPropagation();toggleCommentMenu(${Number(c.id)})">⋮</button><div id="commentMenu-${Number(c.id)}" class="commentMenu" hidden>${canEdit?`<button onclick="editComment(${Number(c.id)});event.stopPropagation()">✏️ Edit</button>`:''}${canDelete?`<button onclick="deleteComment(${Number(c.id)});event.stopPropagation()">🗑️ Delete</button>`:''}<button onclick="reportComment(${Number(c.id)});event.stopPropagation()">🚩 Report</button></div></div>`;
+}
+function toggleCommentMenu(id){document.querySelectorAll('.commentMenu').forEach(x=>{if(x.id!==`commentMenu-${id}`)x.hidden=true});const el=document.getElementById(`commentMenu-${id}`);if(el)el.hidden=!el.hidden}
+document.addEventListener('click',()=>document.querySelectorAll('.commentMenu').forEach(x=>x.hidden=true));
+async function commentApi(id,method,body){
+  try{return await api('/comments/'+id,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined})}
+  catch(first){return await api('/videos/'+selected.id+'/comments/'+id,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined})}
+}
+async function editComment(id){
+  const c=(window._loadedComments||[]).find(x=>String(x.id)===String(id)); if(!c)return;
+  const text=prompt('Edit comment',c.text||''); if(text===null)return; const clean=text.trim(); if(!clean)return;
+  try{await commentApi(id,'PUT',{text:clean});await loadComments()}catch(e){alert(e.message)}
+}
+async function deleteComment(id){
+  if(!confirm('Delete this comment?'))return;
+  try{await commentApi(id,'DELETE');await loadComments()}catch(e){alert(e.message)}
+}
+async function reportComment(id){
+  if(!user)return auth();
+  const reason=prompt('Report reason (optional):','Inappropriate content'); if(reason===null)return;
+  try{await commentApi(id,'POST',{reason:reason.trim()||'Reported by user'});alert('Comment reported')}catch(e){alert(e.message)}
+}
+async function loadComments(){if(!selected)return;try{let d=await api('/videos/'+selected.id+'/comments');window._loadedComments=Array.isArray(d)?d:[];const box=document.getElementById('comments');const count=document.getElementById('commentCount');if(count)count.textContent=Array.isArray(d)?` ${d.length}`:'';if(!box)return;box.innerHTML=d.length?d.map(c=>`<div class="commentItem"><div class="commentItemHead"><b>${escapeHtml(c.display_name||'User')}</b>${commentMenu(c)}</div><p>${escapeHtml(c.text)}</p></div>`).join(''):'<div class="commentEmpty">No comments yet.</div>'}catch{window._loadedComments=[];if(document.getElementById('commentCount'))document.getElementById('commentCount').textContent='';if(document.getElementById('comments'))document.getElementById('comments').innerHTML='<div class="commentEmpty">Comments available after database connection.</div>'}}
 async function comment(){let el=document.getElementById('commentText'),text=el?.value.trim();if(!text)return;if(!user)return auth();try{await api('/videos/'+selected.id+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});el.value='';loadComments()}catch(e){alert(e.message)}}
 async function like(id){
   if(!user)return auth();
@@ -1256,6 +1316,7 @@ function updatePinnedWatchPlayer(){
       hyperPlayerPinState={wrap,spacer,placeholderTop:rect.top+window.scrollY};
       const r=wrap.getBoundingClientRect();
       wrap.classList.add('player-fixed');
+      page.classList.add('player-is-pinned');
       wrap.style.top=headerH+'px';
       wrap.style.left=r.left+'px';
       wrap.style.width=r.width+'px';
@@ -1267,6 +1328,7 @@ function updatePinnedWatchPlayer(){
     if(window.scrollY+headerH+2 < originalTop){
       const spacer=hyperPlayerPinState.spacer;
       wrap.classList.remove('player-fixed');
+      page.classList.remove('player-is-pinned');
       wrap.style.top='';wrap.style.left='';wrap.style.width='';wrap.style.height='';
       if(spacer&&spacer.parentNode)spacer.remove();
       hyperPlayerPinState={wrap:null,spacer:null,placeholderTop:0};
