@@ -163,3 +163,10 @@ Fixes mobile "request entity too large" when saving a profile picture. Profile i
 - Scrolling never moves the playing video into the custom floating mini-player.
 - Opening the Comments box hides Related videos; closing Comments shows Related videos again.
 - The Mini Player button remains available for manual use.
+
+
+## HYPER v2.5.23 comment/menu/ad fixes
+- Comment author menu shows only Edit + Delete; other users see only Report.
+- Comment action menus are fixed-position so they remain fully visible even when overlapping another comment.
+- Pre-roll overlay no longer blocks taps on other Home/Related videos; only the ad itself captures pointer input.
+- Starting another video cancels the previous pre-roll and opens the newly selected video flow.

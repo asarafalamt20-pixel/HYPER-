@@ -352,7 +352,6 @@ button{font:inherit;cursor:pointer}.top{height:70px;display:flex;align-items:cen
 .watch .commentItem{z-index:1!important;}
 .watch .commentMenuWrap{z-index:300!important;}
 .watch .commentMenu{z-index:999!important;min-width:150px!important;}
-.commentMenu button[hidden]{display:none!important;}
 </style></head><body><div id="app"><main class="page"><section class="hero"><p>WATCH • CREATE • SHARE</p><h1>Your World on HYPER</h1><span>Discover creators and videos you love.</span></section><h2>For You</h2><div class="grid"><div class="empty">Loading HYPER videos…</div></div></main></div>
 <div id="transferDock" class="transferDock"></div>
 <div class="bottom"><button data-tab="home">⌂<small>Home</small></button><button data-tab="shorts">◉<small>Shorts</small></button><button class="plus" data-tab="create">＋</button><button data-tab="subs">▣<small>Subscriptions</small></button><button data-tab="library">◌<small>Library</small></button></div>
@@ -590,9 +589,10 @@ async function watchWithPreRoll(id, ev){
   }
   const overlay=document.createElement('div');
   overlay.id='hyperPreRollOverlay';
-  overlay.style.cssText='position:fixed;inset:70px 0 70px 0;background:rgba(0,0,0,.18);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding-top:24px;pointer-events:auto;';
+  overlay.style.cssText='position:fixed;inset:70px 0 70px 0;background:rgba(0,0,0,.18);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding-top:24px;pointer-events:none;';
   const wrap=document.createElement('div');
-  wrap.style.cssText='position:relative;width:min(100vw,900px);aspect-ratio:16/9;height:auto;max-height:56.25vw;background:#000;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px #0008;';
+  wrap.style.cssText='position:relative;width:min(100vw,900px);aspect-ratio:16/9;height:auto;max-height:56.25vw;background:#000;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px #0008;pointer-events:auto;';
+  // Only the ad player captures touches; the transparent area must let Home/Related cards receive clicks.
   const av=document.createElement('video');
   av.id='hyperPreRollVideo';av.setAttribute('playsinline','');av.setAttribute('webkit-playsinline','');
   av.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';
@@ -823,7 +823,7 @@ function commentMenu(c){
   const m=commentCanManage(c);
   const canEdit=m.mine;
   const canDelete=m.mine;
-  const report=!m.mine; return `<div class="commentMenuWrap"><button class="commentMenuBtn" type="button" aria-label="Comment options" onclick="event.stopPropagation();toggleCommentMenu(${Number(c.id)})">⋮</button><div id="commentMenu-${Number(c.id)}" class="commentMenu" hidden>${canEdit?`<button onclick="editComment(${Number(c.id)});event.stopPropagation()">✏️ Edit</button>`:''}${canDelete?`<button onclick="deleteComment(${Number(c.id)});event.stopPropagation()">🗑️ Delete</button>`:''}${report?`<button onclick="reportComment(${Number(c.id)});event.stopPropagation()">🚩 Report</button>`:''}</div></div>`;
+  return `<div class="commentMenuWrap"><button class="commentMenuBtn" type="button" aria-label="Comment options" onclick="event.stopPropagation();toggleCommentMenu(${Number(c.id)})">⋮</button><div id="commentMenu-${Number(c.id)}" class="commentMenu" hidden>${canEdit?`<button onclick="editComment(${Number(c.id)});event.stopPropagation()">✏️ Edit</button>`:''}${canDelete?`<button onclick="deleteComment(${Number(c.id)});event.stopPropagation()">🗑️ Delete</button>`:''}<button onclick="reportComment(${Number(c.id)});event.stopPropagation()">🚩 Report</button></div></div>`;
 }
 function toggleCommentMenu(id){document.querySelectorAll('.commentMenu').forEach(x=>{if(x.id!==`commentMenu-${id}`)x.hidden=true});const el=document.getElementById(`commentMenu-${id}`);if(el)el.hidden=!el.hidden}
 document.addEventListener('click',()=>document.querySelectorAll('.commentMenu').forEach(x=>x.hidden=true));
